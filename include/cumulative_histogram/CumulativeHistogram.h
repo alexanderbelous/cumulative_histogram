@@ -1,5 +1,6 @@
 #include <bit>
 #include <memory>
+#include <stdexcept>
 #include <span>
 #include <vector>
 
@@ -43,7 +44,7 @@ class CumulativeHistogram {
   // Time complexity: O(log2(N)).
   T partialSum(std::size_t k) const;
 
-  // Returns the total sum of all elements, or 0 if the tree is empty.
+  // Returns the total sum of all elements, or 0 if the histogram is empty.
   // Time complexity: O(1).
   constexpr T totalSum() const noexcept;
 
@@ -87,14 +88,11 @@ class CumulativeHistogram {
   // +------------------------------------------------------------------------------------------+
   std::vector<T> nodes_;
 
-  T total_sum_ = 0;
+  T total_sum_ = {};
 };
 
 template<class T>
 std::size_t CumulativeHistogram<T>::countNodesInTree(std::size_t num_elements) {
-  if (num_elements < 2) {
-    return 0;
-  }
   // This number can be compute via a recurrent relation:
   //   f(0) = 0
   //   f(1) = 0
@@ -106,14 +104,13 @@ std::size_t CumulativeHistogram<T>::countNodesInTree(std::size_t num_elements) {
   //   f(2N+1) = f(N+1) + f(N) + 1
   //
   // which forms the sequence https://oeis.org/A279521.
-  // The direct formula is tricky, though.
-  // TODO: offset n
-  const std::size_t n = num_elements;
-  const int h = std::bit_width(n) - 1; // floor(log2(N)), always >= 2
-  const std::size_t p2h = static_cast<std::size_t>(1) << h;       // 2^h
-  const std::size_t p2h_1 = static_cast<std::size_t>(1) << (h-1); // 2^(h-1)
-  const int He = (-n + 3*p2h_1 - 1) >= 0 ? 1 : 0;
-  return static_cast<std::size_t>((n + p2h_1 - 1)*He + std::pow(-1, He)*(p2h - 1));  
+  if (num_elements <= 2) {
+    return 0;
+  }
+  const std::size_t n = num_elements - 1;
+  const std::size_t p2h = std::bit_floor(n);  // 2^h, where h = floor(log2(n))
+  const std::size_t p2h_1 = p2h >> 1;         // 2^(h-1)
+  return std::min(p2h - 1, n - p2h_1);
 }
 
 template<class T>
@@ -146,7 +143,7 @@ void CumulativeHistogram<T>::increment(std::size_t k, const T& value) {
   std::size_t first = 0;     // inclusive
   std::size_t last = n - 1;  // inclusive
   // Indices of the nodes representing the subtree for elements [first; last].
-  std::size_t root = 0;  // index of the root node of the curent subtree.
+  auto root = nodes_.begin();  // iterator to the root node of the current subtree.
   std::size_t num_nodes = nodes_.size();  // the number of nodes in the current subtree.
   while (num_nodes != 0) {
     // Elements [first; middle] are in the left branch.
@@ -156,10 +153,10 @@ void CumulativeHistogram<T>::increment(std::size_t k, const T& value) {
     const std::size_t num_nodes_left = num_nodes / 2;
     if (k <= middle) {
       // Increment the root: the root of a subtree stores the sum elements [first; last].
-      nodes_[root] += value;
+      *root += value;
       // Switch to the left tree:
       last = middle;
-      root += 1;
+      ++root;
       num_nodes = num_nodes_left;
     } else {
       // Not incrementing the root, because element k is not in the left branch.
@@ -188,27 +185,27 @@ T CumulativeHistogram<T>::partialSum(std::size_t k) const {
   }
   std::size_t first = 0;     // inclusive
   std::size_t last = n - 1;  // inclusive
-  T result = 0;
+  T result {};
   // Indices of the nodes representing the subtree for elements [first; last].
-  std::size_t root = 0;  // index of the root node of the curent subtree.
+  auto root = nodes_.begin(); // iterator to the root node of the current subtree.
   std::size_t num_nodes = nodes_.size();  // the number of nodes in the current subtree.
   while (num_nodes != 0) {
     const std::size_t middle = first + (last - first) / 2;
     if (k == middle) {
       // We are in luck - the left subtree represents elements [first; middle], so
       // there's no need to traverse any deeper.
-      return result + nodes_[root];
+      return result + *root;
     }
     // The left subtree has ceil((num_nodes-1)/2) = floor(num_nodes/2) nodes.
     const std::size_t num_nodes_left = num_nodes / 2;
     if (k < middle) {
       // Switch to the left subtree:
       last = middle;
-      root += 1;
+      ++root;
       num_nodes = num_nodes_left;
     } else {  // k > middle
       // Add the sum of elements from [first; middle].
-      result += nodes_[root];
+      result += *root;
       // Switch to the right subtree:
       first = middle + 1;
       // The right subtree has floor((num_nodes-1)/2) nodes.
