@@ -2,6 +2,7 @@
 #include <memory>
 #include <stdexcept>
 #include <span>
+#include <type_traits>
 #include <vector>
 
 namespace CumulativeHistogram_NS {
@@ -21,6 +22,14 @@ class CumulativeHistogram {
   // Constructs a cumulative histogram for N elements.
   // TODO: time complexity?
   explicit CumulativeHistogram(std::size_t num_elements);
+
+  // Sets the values of all elements to 0.
+  // Time complexity: O(N).
+  void setZero();
+
+  // Sets the values of all elements to the specified value.
+  // Time complexity: O(N).
+  void fill(const T& value);
 
   // Returns the number of elements in the histogram.
   constexpr std::size_t numElements() const noexcept;
@@ -49,7 +58,44 @@ class CumulativeHistogram {
   constexpr T totalSum() const noexcept;
 
  private:
-  static std::size_t countNodesInTree(std::size_t num_elements);
+  static constexpr std::size_t countNodesInTree(std::size_t num_elements) noexcept;
+
+  template<bool Mutable>
+  class TreeView {
+   public:
+     using value_type = std::conditional_t<Mutable, T, const T>;
+     using reference = value_type&;
+
+     constexpr explicit TreeView(std::span<value_type> nodes) noexcept:
+       nodes_(nodes)
+     {}
+
+     constexpr bool empty() const noexcept {
+       return nodes_.empty();
+     }
+
+     constexpr std::size_t countNodes() const noexcept {
+       return nodes_.size();
+     }
+
+     reference root() const {
+       return nodes_.front();
+     }
+
+     constexpr TreeView leftChild() const{
+       const std::size_t num_nodes_left = nodes_.size() / 2;
+       return TreeView(nodes_.subspan(1, num_nodes_left));
+     }
+
+     constexpr TreeView rightChild() const {
+       const std::size_t num_nodes_left = nodes_.size() / 2;
+       const std::size_t num_nodes_right = (nodes_.size() - 1) / 2;
+       return TreeView(nodes_.subspan(1 + num_nodes_left, num_nodes_right));
+     }
+
+   private:
+    std::span<value_type> nodes_;
+  };
 
   std::vector<T> data_;
   // Tree data.
@@ -92,7 +138,7 @@ class CumulativeHistogram {
 };
 
 template<class T>
-std::size_t CumulativeHistogram<T>::countNodesInTree(std::size_t num_elements) {
+constexpr std::size_t CumulativeHistogram<T>::countNodesInTree(std::size_t num_elements) noexcept {
   // This number can be compute via a recurrent relation:
   //   f(0) = 0
   //   f(1) = 0
@@ -142,30 +188,23 @@ void CumulativeHistogram<T>::increment(std::size_t k, const T& value) {
   }
   std::size_t first = 0;     // inclusive
   std::size_t last = n - 1;  // inclusive
-  // Indices of the nodes representing the subtree for elements [first; last].
-  auto root = nodes_.begin();  // iterator to the root node of the current subtree.
-  std::size_t num_nodes = nodes_.size();  // the number of nodes in the current subtree.
-  while (num_nodes != 0) {
+  // Tree representing the elements [first; last].
+  TreeView<true> tree(nodes_);
+  while (!tree.empty()) {
     // Elements [first; middle] are in the left branch.
     // Elements [middle+1; last] are in the right branch.
     const std::size_t middle = first + (last - first) / 2;
-    // The left subtree has ceil((num_nodes-1)/2) = floor(num_nodes/2) nodes.
-    const std::size_t num_nodes_left = num_nodes / 2;
     if (k <= middle) {
       // Increment the root: the root of a subtree stores the sum elements [first; last].
-      *root += value;
+      tree.root() += value;
       // Switch to the left tree:
+      tree = tree.leftChild();
       last = middle;
-      ++root;
-      num_nodes = num_nodes_left;
     } else {
       // Not incrementing the root, because element k is not in the left branch.
       // Switch to the right tree:
       first = middle + 1;
-      // The right subtree has floor((num_nodes-1)/2) nodes.
-      const std::size_t num_nodes_right = (num_nodes - 1) / 2;
-      root += (1 + num_nodes_left);
-      num_nodes = num_nodes_right;
+      tree = tree.rightChild();
     }
   }
   // Update the element itself.
@@ -186,32 +225,25 @@ T CumulativeHistogram<T>::partialSum(std::size_t k) const {
   std::size_t first = 0;     // inclusive
   std::size_t last = n - 1;  // inclusive
   T result {};
-  // Indices of the nodes representing the subtree for elements [first; last].
-  auto root = nodes_.begin(); // iterator to the root node of the current subtree.
-  std::size_t num_nodes = nodes_.size();  // the number of nodes in the current subtree.
-  while (num_nodes != 0) {
+  // Tree representing the elements [first; last].
+  TreeView<false> tree(nodes_);
+  while (!tree.empty()) {
     const std::size_t middle = first + (last - first) / 2;
     if (k == middle) {
       // We are in luck - the left subtree represents elements [first; middle], so
       // there's no need to traverse any deeper.
-      return result + *root;
+      return result + tree.root();
     }
-    // The left subtree has ceil((num_nodes-1)/2) = floor(num_nodes/2) nodes.
-    const std::size_t num_nodes_left = num_nodes / 2;
     if (k < middle) {
       // Switch to the left subtree:
       last = middle;
-      ++root;
-      num_nodes = num_nodes_left;
+      tree = tree.leftChild();
     } else {  // k > middle
       // Add the sum of elements from [first; middle].
-      result += *root;
+      result += tree.root();
       // Switch to the right subtree:
       first = middle + 1;
-      // The right subtree has floor((num_nodes-1)/2) nodes.
-      const std::size_t num_nodes_right = (num_nodes - 1) / 2;
-      root += (1 + num_nodes_left);
-      num_nodes = num_nodes_right;
+      tree = tree.rightChild();
     }
   }
   // If we are here, then the value of x[k] itself hasn't been added through any node in the tree.
