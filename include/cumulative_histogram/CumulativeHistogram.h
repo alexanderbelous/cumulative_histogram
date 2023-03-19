@@ -1,4 +1,5 @@
 #include <bit>
+#include <numeric>
 #include <stdexcept>
 #include <span>
 #include <type_traits>
@@ -20,6 +21,13 @@ class CumulativeHistogram {
 
   // Constructs a cumulative histogram for N elements.
   explicit CumulativeHistogram(std::size_t num_elements);
+
+  // Constructs a cumulative histogram for the specified elements.
+  explicit CumulativeHistogram(std::vector<T>&& elements);
+
+  // Constructs a cumulative histogram for the specified elements.
+  template<class Iter>
+  explicit CumulativeHistogram(Iter first, Iter last);
 
   // Sets the values of all elements to 0.
   // Time complexity: O(N).
@@ -64,8 +72,14 @@ class CumulativeHistogram {
   // CumulativeHistogram with the specified number of elements.
   static constexpr std::size_t countNodesInTree(std::size_t num_elements) noexcept;
 
+  // Rebuilds the tree data.
+  // Time complexity: O(N).
+  void rebuildTree() noexcept;
+
   template<bool Mutable>
   class TreeView;
+
+  T buildTreeImpl(const TreeView<true>& tree) noexcept;
 
   // Array of N+M counters, where the first N are the actual elements,
   // and the remaining M counters are the nodes of the implicit tree.
@@ -132,6 +146,14 @@ public:
     element_last_(element_last)
   {}
 
+  constexpr std::size_t elementFirst() const noexcept {
+    return element_first_;
+  }
+
+  constexpr std::size_t elementLast() const noexcept {
+    return element_last_;
+  }
+
   constexpr bool empty() const noexcept {
     return nodes_.empty();
   }
@@ -183,11 +205,57 @@ constexpr std::size_t CumulativeHistogram<T>::countNodesInTree(std::size_t num_e
   return std::min(p2h - 1, n - p2h_1);
 }
 
+// TODO: replace recursion with a loop.
+template<class T>
+T CumulativeHistogram<T>::buildTreeImpl(const TreeView<true>& tree) noexcept {
+  // Every node represents at least 3 elements - we don't store smaller nodes.
+  // Thus, any non-empty tree has elements in both left and right subtrees, even
+  // if these subtrees don't actually have nodes.
+  if (tree.empty()) {
+    const std::size_t element_first = tree.elementFirst();
+    const std::size_t element_last = tree.elementLast();
+    const std::size_t num_elements = element_last - element_first + 1;
+    std::span<const T> elements{ data_.data() + element_first, num_elements };
+    return std::accumulate(elements.begin(), elements.end(), T{});
+  }
+  const T total_sum_left = buildTreeImpl(tree.leftChild());
+  const T total_sum_right = buildTreeImpl(tree.rightChild());
+  tree.root() = total_sum_left;
+  return total_sum_left + total_sum_right;
+}
+
+template<class T>
+void CumulativeHistogram<T>::rebuildTree() noexcept {
+  const std::span<T> nodes = std::span<T>{data_}.subspan(num_elements_);
+  TreeView<true> tree(nodes, 0, num_elements_ - 1);
+  total_sum_ = buildTreeImpl(tree);
+}
+
 template<class T>
 CumulativeHistogram<T>::CumulativeHistogram(std::size_t num_elements):
   data_(num_elements + countNodesInTree(num_elements)),
   num_elements_(num_elements)
 {}
+
+template<class T>
+CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
+  data_(std::move(elements)),
+  num_elements_(data_.size())
+{
+  data_.resize(num_elements_ + countNodesInTree(num_elements_));
+  rebuildTree();
+}
+
+// TODO: if Iter allows multipass, we should only do 1 memory allocation.
+template<class T>
+template<class Iter>
+CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last):
+  data_(first, last),
+  num_elements_(data_.size())
+{
+  data_.resize(num_elements_ + countNodesInTree(num_elements_));
+  rebuildTree();
+}
 
 template<class T>
 void CumulativeHistogram<T>::setZero() {

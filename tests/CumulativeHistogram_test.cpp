@@ -26,6 +26,28 @@ TEST(CumulativeHistogram, ZeroInitialization) {
   }
 }
 
+TEST(CumulativeHistogram, ConstructFromVector) {
+  const std::vector<int> elements = {1, 2, 3, 4, 5, 6, 7};
+  CumulativeHistogram<int> histogram{ std::vector<int>{elements} };
+  EXPECT_EQ(histogram.numElements(), elements.size());
+  EXPECT_EQ(histogram.totalSum(), std::accumulate(elements.begin(), elements.end(), 0));
+  for (std::size_t i = 0; i < elements.size(); ++i) {
+    const int partial_sum = std::accumulate(elements.begin(), elements.begin() + i + 1, 0);
+    EXPECT_EQ(histogram.partialSum(i), partial_sum);
+  }
+}
+
+TEST(CumulativeHistogram, ConstructFromRange) {
+  const std::vector<int> elements = {1, 2, 3, 4, 5, 6, 7};
+  CumulativeHistogram<int> histogram{elements.begin(), elements.end()};
+  EXPECT_EQ(histogram.numElements(), elements.size());
+  EXPECT_EQ(histogram.totalSum(), std::accumulate(elements.begin(), elements.end(), 0));
+  for (std::size_t i = 0; i < elements.size(); ++i) {
+    const int partial_sum = std::accumulate(elements.begin(), elements.begin() + i + 1, 0);
+    EXPECT_EQ(histogram.partialSum(i), partial_sum);
+  }
+}
+
 TEST(CumulativeHistogram, TotalSum) {
   static constexpr std::size_t kNumElements = 5;
   CumulativeHistogram<int> histogram(kNumElements);
