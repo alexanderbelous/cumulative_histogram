@@ -1,5 +1,4 @@
 #include <bit>
-#include <memory>
 #include <stdexcept>
 #include <span>
 #include <type_traits>
@@ -66,16 +65,20 @@ class CumulativeHistogram {
      using value_type = std::conditional_t<Mutable, T, const T>;
      using reference = value_type&;
 
-     constexpr explicit TreeView(std::span<value_type> nodes) noexcept:
-       nodes_(nodes)
+     constexpr TreeView(std::span<value_type> nodes,
+                        std::size_t element_first,
+                        std::size_t element_last) noexcept:
+       nodes_(nodes),
+       element_first_(element_first),
+       element_last_(element_last)
      {}
 
      constexpr bool empty() const noexcept {
        return nodes_.empty();
      }
 
-     constexpr std::size_t countNodes() const noexcept {
-       return nodes_.size();
+     constexpr std::size_t pivot() const noexcept {
+       return element_first_ + (element_last_ - element_first_) / 2;
      }
 
      reference root() const {
@@ -84,17 +87,19 @@ class CumulativeHistogram {
 
      constexpr TreeView leftChild() const{
        const std::size_t num_nodes_left = nodes_.size() / 2;
-       return TreeView(nodes_.subspan(1, num_nodes_left));
+       return TreeView(nodes_.subspan(1, num_nodes_left), element_first_, pivot());
      }
 
      constexpr TreeView rightChild() const {
        const std::size_t num_nodes_left = nodes_.size() / 2;
        const std::size_t num_nodes_right = (nodes_.size() - 1) / 2;
-       return TreeView(nodes_.subspan(1 + num_nodes_left, num_nodes_right));
+       return TreeView(nodes_.subspan(1 + num_nodes_left, num_nodes_right), pivot() + 1, element_last_);
      }
 
    private:
     std::span<value_type> nodes_;
+    std::size_t element_first_;
+    std::size_t element_last_;
   };
 
   std::vector<T> data_;
@@ -186,24 +191,15 @@ void CumulativeHistogram<T>::increment(std::size_t k, const T& value) {
   if (k >= n) {
     throw std::out_of_range("CumulativeHistogram::increment(): k is out of range.");
   }
-  std::size_t first = 0;     // inclusive
-  std::size_t last = n - 1;  // inclusive
-  // Tree representing the elements [first; last].
-  TreeView<true> tree(nodes_);
+  // Tree representing the elements [0; n).
+  TreeView<true> tree(nodes_, 0, n - 1);
   while (!tree.empty()) {
-    // Elements [first; middle] are in the left branch.
-    // Elements [middle+1; last] are in the right branch.
-    const std::size_t middle = first + (last - first) / 2;
-    if (k <= middle) {
-      // Increment the root: the root of a subtree stores the sum elements [first; last].
+    // Check whether the element k is in the left or the right branch.
+    if (k <= tree.pivot()) {
+      // The root stores the sum of all elements in the left subtree, so we need to increment it.
       tree.root() += value;
-      // Switch to the left tree:
       tree = tree.leftChild();
-      last = middle;
     } else {
-      // Not incrementing the root, because element k is not in the left branch.
-      // Switch to the right tree:
-      first = middle + 1;
       tree = tree.rightChild();
     }
   }
@@ -222,27 +218,18 @@ T CumulativeHistogram<T>::partialSum(std::size_t k) const {
   if (k == n - 1) {
     return total_sum_;
   }
-  std::size_t first = 0;     // inclusive
-  std::size_t last = n - 1;  // inclusive
   T result {};
-  // Tree representing the elements [first; last].
-  TreeView<false> tree(nodes_);
+  // Tree representing the elements [0; n).
+  TreeView<false> tree(nodes_, 0, n - 1);
   while (!tree.empty()) {
-    const std::size_t middle = first + (last - first) / 2;
-    if (k == middle) {
-      // We are in luck - the left subtree represents elements [first; middle], so
-      // there's no need to traverse any deeper.
-      return result + tree.root();
-    }
+    // The root of the tree stores the sum of all elements [first; middle].
+    const std::size_t middle = tree.pivot();
     if (k < middle) {
-      // Switch to the left subtree:
-      last = middle;
       tree = tree.leftChild();
-    } else {  // k > middle
-      // Add the sum of elements from [first; middle].
+    } else if (k == middle) {
+      return result + tree.root();
+    } else {
       result += tree.root();
-      // Switch to the right subtree:
-      first = middle + 1;
       tree = tree.rightChild();
     }
   }
