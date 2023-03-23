@@ -42,9 +42,11 @@ class CumulativeHistogram {
   void resize(std::size_t num_elements);
 
   // Add a zero-initialized element to the end.
-  // Time complexity: amortized O(logN) ?
+  // Time complexity: amortized O(1).
   void push_back();
 
+  // Add an element to the end.
+  // Time complexity: amortized O(logN).
   void push_back(const T& value);
 
   // Remove the last element.
@@ -167,7 +169,7 @@ class CumulativeHistogram {
 // |  x0  |  n2  |  n1  | n1+x3 | n1+n3 |  n0  | n0+x6 | n0+n5 | n0+n4 | n0+n4+x9 | total_sum |
 // +------------------------------------------------------------------------------------------+
 //
-// In order to support efficient insertion, the class grows its the same way that std::vector does:
+// In order to support efficient insertion, the class grows in the same way that std::vector does:
 // if numElements() == capacity(), then the next call to push_back() will allocate memory for a histogram
 // capable of storing 2N elements.
 //
@@ -175,11 +177,11 @@ class CumulativeHistogram {
 // * N = the number of elements.
 // * Nmax = current capacity.
 // * M = countNodesInTree(Nmax)
-// +------+------+------+------+------+------------+-----------+------+------+------+------+------+
-// |   0  |   1  |   2  | .... |  N-1 | .......... |    N      | N+1  | N+2  | N+3  | ...  | N+M  |
-// +------+------+------+------+------+------------+-----------+------+------+------+------+------+
-// |  x0  |  x1  |  x2  | .... | xN-1 | ...free... | total_sum |  n0  |  n1  |  n2  | .... | nM-1 |
-// +------+------+------+------+------+------------+-----------+------+------+------+------+------+
+// +------+------+------+------+------+------------+-----------+--------+--------+--------+------+--------+
+// |   0  |   1  |   2  | .... |  N-1 | .......... |    Nmax   | Nmax+1 | Nmax+2 | Nmax+3 | ...  | Nmax+M |
+// +------+------+------+------+------+------------+-----------+--------+--------+--------+------+--------+
+// |  x0  |  x1  |  x2  | .... | xN-1 | ...free... | total_sum |   n0   |   n1   |   n2   | .... |  nM-1  |
+// +------+------+------+------+------+------------+-----------+--------+--------+--------+------+--------+
 // In practice, the root is not necessarily at n0: if the current number of elements is <= ceil(N/2),
 // then the right subtree is empty, and n0 is the same as total_sum, so we may as well pretend that
 // the left subtree *is* the tree, and that the root is at n1. This is applied recursively until
@@ -362,7 +364,11 @@ void CumulativeHistogram<T>::increment(std::size_t k, const T& value) {
   }
   // Tree representing the elements [0; N).
   const std::span<T> nodes = std::span<T>{data_}.subspan(root_idx_, num_nodes_);
-  TreeView<true> tree(nodes, 0, num_elements_ - 1);
+  // TODO: the effective elements are not necessarily [0; capacity_ - 1].
+  //       Rationale: if root_idx_ = capacity_ + 1, then we should use the range [0; capacity_ - 1].
+  //       However, if root_idx_ = capacity_ + 2, then we should use [0; ceil(capacity_/2) - 1].
+  //       ... and so on.
+  TreeView<true> tree(nodes, 0, capacity_ - 1);
   while (!tree.empty()) {
     // Check whether the element k is in the left or the right branch.
     if (k <= tree.pivot()) {
@@ -391,7 +397,11 @@ T CumulativeHistogram<T>::partialSum(std::size_t k) const {
   T result {};
   // Tree representing the elements [0; N).
   const std::span<const T> nodes = std::span<const T>{data_}.subspan(root_idx_, num_nodes_);
-  TreeView<false> tree(nodes, 0, num_elements_ - 1);
+  // TODO: the effective elements are not necessarily [0; capacity_ - 1].
+  //       Rationale: if root_idx_ = capacity_ + 1, then we should use the range [0; capacity_ - 1].
+  //       However, if root_idx_ = capacity_ + 2, then we should use [0; ceil(capacity_/2) - 1].
+  //       ... and so on.
+  TreeView<false> tree(nodes, 0, capacity_ - 1);
   while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [first; middle].
     const std::size_t middle = tree.pivot();
