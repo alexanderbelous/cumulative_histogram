@@ -7,12 +7,20 @@
 
 namespace CumulativeHistogram_NS {
 
-// This class allows to efficiently compute partial sums for a fixed-size array of mutable elements.
-// The naive solution (re-computing the partial sums whenever an element is modified) has O(N) time complexity,
-// which can be inefficient if both operations (modifying an element and computing a partial sum) are used often.
+// This class allows to efficiently compute partial sums for a dynamic array of elements
+// by offering a compromise between 2 naive solutions:
+// +------------------------------------+-------------------+-------------+-------+
+// | Solution                           | Modify an element | Partial sum | Space |
+// +------------------------------------+-------------------+-------------+-------+
+// | 1. Store the elements in an array  | O(1)              | O(N)        | O(N)  |
+// +------------------------------------+-------------------+-------------+-------+
+// | 2. Store the partial sums in array | O(N)              | O(1)        | O(N)  |
+// +------------------------------------+-------------------+-------------+-------+
+// | 3. CumulativeHistogram             | O(logN)           | O(logN)     | O(N)  |
+// +------------------------------------+-------------------+-------------+-------+
 //
-// Space complexity: O(N), where N is the number of elements.
-// The overhead is approximately 50% (i.e. the class stores roughly N/2 extra counters).
+// Unlike a Fenwick tree, this class allows adding and removing elements.
+// The memory overhead is approximately 50% (i.e. the class stores roughly N/2 extra counters).
 template<class T>
 class CumulativeHistogram {
  public:
@@ -29,14 +37,22 @@ class CumulativeHistogram {
   template<class Iter>
   explicit CumulativeHistogram(Iter first, Iter last);
 
+  // Returns true if the number of elements is greater than 0, false otherwise.
+  // Time complexity: O(1).
+  constexpr bool empty() const noexcept;
+
   // Returns the number of elements that can be held in currently allocated storage.
   // Time complexity: O(1).
   constexpr std::size_t capacity() const noexcept;
 
-  // Reserves memory for a histogram capable of storing N' elements.
+  // Reserves memory for a histogram capable of storing the specified number of elements.
   // The values of existing elements remain unchanged.
-  // Time complexity: O(N').
+  // Time complexity: O(N), where N is the current number of elements.
   void reserve(std::size_t num_elements);
+
+  // Erases all elements
+  // The capacity remains unchanged.
+  void clear();
 
   // TODO
   void resize(std::size_t num_elements);
@@ -106,6 +122,13 @@ class CumulativeHistogram {
   T buildTreeImpl(const TreeView<true>& tree) noexcept;
 
   // Internal data.
+  // TODO: consider not using std::vector.
+  // Rationale: if the histogram is at full capacity and we want to add more element(s),
+  // we need to allocate more memory. However, we won't just copy current data via a
+  // single memcpy() call: in the new memory there will be a "gap" between data for the
+  // elements and data for the tree.
+  // We can still use std::vector for storage, but we don't need its insert/erase API.
+  // In fact, unique_ptr<T[]> will do fine.
   std::vector<T> data_;
   // The number of elements N.
   std::size_t num_elements_ = 0;
@@ -281,9 +304,13 @@ T CumulativeHistogram<T>::buildTreeImpl(const TreeView<true>& tree) noexcept {
 template<class T>
 void CumulativeHistogram<T>::rebuildTree() noexcept {
   const std::span<T> nodes = std::span<T>{data_}.subspan(root_idx_, num_nodes_);
-  TreeView<true> tree(nodes, 0, num_elements_ - 1);
+  // TODO: the effective elements are not necessarily [0; capacity_ - 1].
+  //       Rationale: if root_idx_ = capacity_ + 1, then we should use the range [0; capacity_ - 1].
+  //       However, if root_idx_ = capacity_ + 2, then we should use [0; ceil(capacity_/2) - 1].
+  //       ... and so on.
+  TreeView<true> tree(nodes, 0, capacity_ - 1);
   data_[root_idx_ - 1] = buildTreeImpl(tree);
-  // TODO: zero-initialize reserved elements
+  // TODO: zero-initialize reserved elements?
 }
 
 template<class T>
