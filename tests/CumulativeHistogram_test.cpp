@@ -75,6 +75,52 @@ TEST(CumulativeHistogram, ConstructFromSinglePassRange) {
   EXPECT_TRUE(CheckPartialSums(histogram));
 }
 
+TEST(CumulativeHistogram, Reserve) {
+  constexpr std::array<unsigned int, 5> kElements = { 1, 2, 3, 4, 5};
+  // Construct a histogram capable of storing 5 elements.
+  CumulativeHistogram<unsigned int> histogram(kElements.begin(), kElements.end());
+  // Reserve memory for more elements than the histogram can currently store.
+  const std::size_t capacity_old = histogram.capacity();
+  const std::size_t capacity_new = capacity_old * 2 + 5;
+  histogram.reserve(capacity_new);
+  // The number of elements should remain the same.
+  EXPECT_EQ(histogram.size(), kElements.size());
+  // The new capacity should not be less than requested.
+  EXPECT_GE(histogram.capacity(), capacity_new);
+  // The elements should remain the same.
+  for (std::size_t i = 0; i < kElements.size(); ++i) {
+    EXPECT_EQ(histogram.element(i), kElements[i]);
+  }
+  // Total sum must remain the same.
+  EXPECT_EQ(histogram.totalSum(), std::accumulate(kElements.begin(), kElements.end(), 0u));
+  // Validate prefix sums.
+  EXPECT_TRUE(CheckPartialSums(histogram));
+}
+
+TEST(CumulativeHistogram, PushBackZeroInitialized) {
+  CumulativeHistogram<unsigned int> histogram;
+  histogram.push_back();
+  EXPECT_EQ(histogram.size(), 1);
+  EXPECT_EQ(histogram.element(0), 0);
+  EXPECT_EQ(histogram.totalSum(), 0);
+  EXPECT_TRUE(CheckPartialSums(histogram));
+  histogram.increment(0, 42);
+  EXPECT_EQ(histogram.element(0), 42);
+  EXPECT_EQ(histogram.totalSum(), 42);
+  EXPECT_TRUE(CheckPartialSums(histogram));
+  histogram.push_back();
+  EXPECT_EQ(histogram.size(), 2);
+  EXPECT_EQ(histogram.element(0), 42);
+  EXPECT_EQ(histogram.element(1), 0);
+  EXPECT_EQ(histogram.totalSum(), 42);
+  EXPECT_TRUE(CheckPartialSums(histogram));
+  histogram.increment(1, 5);
+  EXPECT_EQ(histogram.element(0), 42);
+  EXPECT_EQ(histogram.element(1), 5);
+  EXPECT_EQ(histogram.totalSum(), 47);
+  EXPECT_TRUE(CheckPartialSums(histogram));
+}
+
 TEST(CumulativeHistogram, PopBack) {
   constexpr std::array<unsigned int, 10> kElements = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
   CumulativeHistogram<unsigned int> histogram{ kElements.begin(), kElements.end() };

@@ -27,13 +27,16 @@ class CumulativeHistogram {
   // Constructs an empty histogram.
   constexpr CumulativeHistogram() noexcept = default;
 
-  // Constructs a cumulative histogram for N elements.
+  // Constructs a cumulative histogram for N zero-initialized elements.
+  // Time complexity: O(N).
   explicit CumulativeHistogram(std::size_t num_elements);
 
   // Constructs a cumulative histogram for the specified elements.
+  // TODO: remove this contructor if you decide not to store data in std::vector.
   explicit CumulativeHistogram(std::vector<T>&& elements);
 
   // Constructs a cumulative histogram for the specified elements.
+  // Time complexity: O(N), where N is the distance between first and last.
   template<class Iter>
   explicit CumulativeHistogram(Iter first, Iter last);
 
@@ -124,12 +127,12 @@ class CumulativeHistogram {
 
   // Increment the specified element.
   // Throws std::out_of_range if k >= size().
-  // Time complexity: O(log2(N)).
+  // Time complexity: O(log(N)).
   void increment(std::size_t k, const T& value = 1);
 
   // Returns the partial sum of the first K elements.
   // Throws std::out_of_range if k >= size().
-  // Time complexity: O(log2(N)).
+  // Time complexity: O(log(N)).
   T partialSum(std::size_t k) const;
 
   // Returns the total sum of all elements.
@@ -138,13 +141,12 @@ class CumulativeHistogram {
   constexpr T totalSum() const;
 
   // Find the first element k, for which partialSum(k) is not less than the specified value.
-  // Time complexity: O(log2(N)).
+  // Time complexity: O(log(N)).
   // TODO: implement.
 
  private:
-  // Returns the total number of nodes in the auxiliary tree for
-  // CumulativeHistogram with the specified number of elements.
-  static constexpr std::size_t countNodesInTree(std::size_t num_elements) noexcept;
+  // Implementation details.
+  class Detail;
 
   // Returns the maximum number of elements that can represented by the current tree.
   //   num_elements <= capacityCurrent() <= capacity_
@@ -176,14 +178,12 @@ class CumulativeHistogram {
   // Current capacity Nmax.
   std::size_t capacity_ = 0;
   // Index of the root node.
-  // If data_ is not empty, then 0 < N <= Nmax <= root_idx - 1.
-  // data_[root_idx - 1] always stores the total sum of elements [0; N).
-  // TODO: consider computing this number on the fly. Basically:
-  //   if (num_elements > ceil(capacity_/2))
-  //     root_idx_ = capacity_ + 1;
-  //   else if (num_elements > ceil(ceil(capacity_/2)/2))
-  //     root_idx = capacity + 2;
-  //   else if (...)
+  // * This is always equal to
+  //   capacity_ + 1 + Detail::findDeepestNodeForElements(num_elements_, capacity_)
+  // * data_[root_idx_] may be out of range if the tree has 0 nodes.
+  // * data_[root_idx_] stores the total sum of elements [0; num_elements_) unless
+  //   the histogram is empty.
+  // TODO: consider removing and calling Detail::findDeepestNodeForElements() when needed.
   std::size_t root_idx_ = 1;
 };
 
@@ -191,7 +191,7 @@ class CumulativeHistogram {
 
 // CumulativeHistogram stores auxiliary counters for sums of certain elements.
 // These counters are updated whenever the respective elements are modified -
-// this is why CumulativeHistogram::increment() has O(log2(N)) time complexity.
+// this is why CumulativeHistogram::increment() has O(log(N)) time complexity.
 // However, having these sums precomputed also allows efficient computation of the partial sums.
 //
 // These additional counters form an implicit binary tree:
@@ -300,26 +300,92 @@ private:
 };
 
 template<class T>
-constexpr std::size_t CumulativeHistogram<T>::countNodesInTree(std::size_t num_elements) noexcept {
-  // This number can be computed via a recurrent relation:
-  //   f(0) = 0
-  //   f(1) = 0
-  //   f(2) = 0
-  //   f(3) = 1
-  //   f(4) = 1
-  //   ...
-  //   f(2N) = 2*f(N) + 1
-  //   f(2N+1) = f(N+1) + f(N) + 1
-  //
-  // which forms the sequence https://oeis.org/A279521.
-  if (num_elements <= 2) {
-    return 0;
+class CumulativeHistogram<T>::Detail {
+ public:
+  // Returns true if the given number is a power of 2, false otherwise.
+  static constexpr bool isPowerOf2(std::size_t value) noexcept {
+    return (value != 0) && !(value & (value - 1));
   }
-  const std::size_t n = num_elements - 1;
-  const std::size_t p2h = std::bit_floor(n);  // 2^h, where h = floor(log2(n))
-  const std::size_t p2h_1 = p2h >> 1;         // 2^(h-1)
-  return std::min(p2h - 1, n - p2h_1);
-}
+
+  // Returns floor(log2(x)).
+  static std::size_t floorLog2(std::size_t value) noexcept {
+    return std::bit_width(value) - 1;
+  }
+
+  // Returns ceil(log2(x)).
+  static std::size_t ceilLog2(std::size_t value) noexcept {
+    const std::size_t floor_log2 = floorLog2(value);
+    return isPowerOf2(value) ? floor_log2 : (floor_log2 + 1);
+  }
+
+  // Returns the total number of nodes in the auxiliary tree for
+  // CumulativeHistogram with the specified number of elements.
+  static constexpr std::size_t countNodesInTree(std::size_t num_elements) noexcept {
+    // This number can be computed via a recurrent relation:
+    //   f(0) = 0
+    //   f(1) = 0
+    //   f(2) = 0
+    //   f(3) = 1
+    //   f(4) = 1
+    //   ...
+    //   f(2N) = 2*f(N) + 1
+    //   f(2N+1) = f(N+1) + f(N) + 1
+    //
+    // which forms the sequence https://oeis.org/A279521.
+    if (num_elements <= 2) {
+      return 0;
+    }
+    const std::size_t n = num_elements - 1;
+    const std::size_t p2h = std::bit_floor(n);  // 2^h, where h = floor(log2(n))
+    const std::size_t p2h_1 = p2h >> 1;         // 2^(h-1)
+    return std::min(p2h - 1, n - p2h_1);
+  }
+
+  // Returns the depth of the deepest node containing the elements [0; num_elements)
+  // in the optimal tree representing the elements [0; capacity).
+  // Expects that num_elements <= capacity.
+  // The depth of the root is 0.
+  // Time complexity: O(1).
+  static constexpr std::size_t findDeepestNodeForElements(std::size_t num_elements,
+                                                          std::size_t capacity) noexcept {
+    // Let's assume that we have an optimal tree representing Nmax elements.
+    // Its left subtree represents ceil(Nmax/2) elements.
+    // The left subtree of the above-mentioned subtree represents ceil(ceil(Nmax/2)/2) = ceil(Nmax/4) elements.
+    // and so on.
+    //   x0 = Nmax, x1 = ceil(Nmax/2), ..., xK = ceil(Nmax/2^K)
+    // We want to find the deepest subtree that represents at least N elements.
+    // Which brings us to the inequality:
+    //   ceil(Nmax/2^k) >= N
+    // <=>
+    //   Nmax/2^k + 1 > N
+    // <=>
+    //    Nmax/(N-1) > 2^k
+    // <=>
+    //    k < log2(Nmax/(N-1)
+    // <=>
+    //    The greatest such k is ceil(log2(Nmax/(N-1)))-1
+    //
+    // Edge cases:
+    // * Nmax=0 is an edge case because log2(0) is undefined. In our case it means that
+    //   the capacity of CumulativeHistogram is 0, so we return 0.
+    // * Nmax=1 is an edge case because in this case N can be either 0 or 1 - both of
+    //   which are edge cases (see below). If CumulativeHistogram can store 1 element
+    //   at most, then the tree has 0 nodes, so we return 0.
+    // * N=1 is an edge case because it causes division by 0. In our case it means that
+    //   we want to find the deepest leftmost subtree that represents at least 1 element.
+    //   All nodes in our tree represent at least 3 elements; therefore, any left subtree
+    //   (which may have 0 nodes) represents at least 2 elements. Thus, computeRootIdxFast(1, Nmax)
+    //   returns the same as computeRootIdxFast(2, Nmax).
+    // * N=0 is an edge case because it will result into log2(-Nmax), which is undefined.
+    //   In our case it means that we should return the deepest leftmost subtree, which is the
+    //   same as calling computeRootIdxFast(2, Nmax).
+    if (capacity < 2) return 0;
+    if (num_elements < 2) num_elements = 2;
+
+    const std::size_t ratio = (capacity + num_elements - 2) / (num_elements - 1);  // ceil(Nmax/(N-1))
+    return ceilLog2(ratio) - 1;
+  }
+};
 
 template<class T>
 constexpr std::size_t CumulativeHistogram<T>::capacityCurrent() const noexcept {
@@ -338,7 +404,7 @@ constexpr std::size_t CumulativeHistogram<T>::capacityCurrent() const noexcept {
 
 template<class T>
 constexpr std::size_t CumulativeHistogram<T>::numNodesCurrent() const noexcept {
-  return countNodesInTree(capacityCurrent());
+  return Detail::countNodesInTree(capacityCurrent());
 }
 
 // TODO: replace recursion with a loop.
@@ -368,7 +434,7 @@ void CumulativeHistogram<T>::rebuildTree() noexcept {
 
 template<class T>
 CumulativeHistogram<T>::CumulativeHistogram(std::size_t num_elements):
-  data_(num_elements ? num_elements + 1 + countNodesInTree(num_elements) : 0),
+  data_(num_elements ? num_elements + 1 + Detail::countNodesInTree(num_elements) : 0),
   num_elements_(num_elements),
   capacity_(num_elements),
   root_idx_(capacity_ + 1)
@@ -396,7 +462,7 @@ CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
   //         find the largest Nmax, such that Nmax + 1 + countNodesInTree(Nmax) <= C.
   //     It can be solved with binary search (the solution is somewhere between [N; C),
   //     but I'd prefer an algorithm with O(1) time complexity.
-  data_.resize(num_elements_ + 1 + countNodesInTree(num_elements_));
+  data_.resize(num_elements_ + 1 + Detail::countNodesInTree(num_elements_));
   rebuildTree();
 }
 
@@ -410,10 +476,10 @@ CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last)
     // If Iter does not allow multipass, we need to materialize it first.
     data_.assign(first, last);
     num_elements_ = data_.size();
-    new_data_size = num_elements_ + 1 + countNodesInTree(num_elements_);
+    new_data_size = num_elements_ + 1 + Detail::countNodesInTree(num_elements_);
   } else {
     num_elements_ = std::distance(first, last);
-    new_data_size = num_elements_ + 1 + countNodesInTree(num_elements_);
+    new_data_size = num_elements_ + 1 + Detail::countNodesInTree(num_elements_);
     data_.reserve(new_data_size);
     data_.insert(data_.end(), first, last);
   }
@@ -440,6 +506,26 @@ constexpr std::size_t CumulativeHistogram<T>::capacity() const noexcept {
 }
 
 template<class T>
+void CumulativeHistogram<T>::reserve(std::size_t num_elements) {
+  if (num_elements <= capacity()) {
+    return;
+  }
+  // Construct new data.
+  const std::size_t new_data_size = num_elements + 1 + Detail::countNodesInTree(num_elements);
+  std::vector<T> new_data;
+  new_data.reserve(new_data_size);
+  new_data.insert(new_data.end(), std::make_move_iterator(data_.begin()),
+                                  std::make_move_iterator(data_.begin() + num_elements_));
+  new_data.resize(new_data_size);
+  data_.swap(new_data);
+  capacity_ = num_elements;
+  root_idx_ = capacity_ + 1 + Detail::findDeepestNodeForElements(num_elements_, capacity_);
+  // TODO: Check the special case when the tree for num_elements has our current tree as a subtree.
+  // In that case there's no need to rebuild the tree - we can just copy our current one.
+  rebuildTree();
+}
+
+template<class T>
 void CumulativeHistogram<T>::clear() noexcept {
   data_.clear();
   num_elements_ = 0;
@@ -449,6 +535,30 @@ void CumulativeHistogram<T>::clear() noexcept {
 template<class T>
 void CumulativeHistogram<T>::setZero() {
   std::fill(data_, T{});
+}
+
+template<class T>
+void CumulativeHistogram<T>::push_back() {
+  const bool was_empty = empty();
+  // Double the capacity if needed.
+  if (num_elements_ + 1 > capacity_) {
+    const std::size_t capacity_new = capacity_ == 0 ? 1 : (capacity_ * 2);
+    reserve(capacity_new);
+  }
+  // TODO: this won't work if pop_back() does't clean up after itself. In that
+  // case we'll need to initialize the new nodes.
+  ++num_elements_;
+  if (num_elements_ > capacityCurrent()) {
+    // Update the root.
+    // This is almost always equivalent to --root_idx_, but not if the histogram had 0
+    // nodes before push_back(). Instead of tracking the edge cases, we can just recompute
+    // the index of the root.
+    root_idx_ = capacity_ + 1 + Detail::findDeepestNodeForElements(num_elements_, capacity_);
+    // Initialize the total sum with the sum of elements from the left subtree.
+    if (!was_empty) {
+      data_[root_idx_ - 1] = data_[root_idx_];
+    }
+  }
 }
 
 template<class T>
@@ -462,7 +572,7 @@ void CumulativeHistogram<T>::pop_back() {
   // The number of elements that the current tree represents.
   const std::size_t capacity_current = capacityCurrent();
   // The number of nodes in the current tree.
-  const std::size_t nodes_current = countNodesInTree(capacity_current);
+  const std::size_t nodes_current = Detail::countNodesInTree(capacity_current);
   --num_elements_;
   if (nodes_current > 0) {
     const std::size_t num_elements_in_left_subtree = (capacity_current + 1) / 2;
@@ -496,6 +606,7 @@ void CumulativeHistogram<T>::resize(std::size_t num_elements) {
     // we need to initialize the new nodes anyway, so the loop cannot be avoided.
     while (num_elements_ > capacityCurrent()) {
       // Update the root.
+      // TODO: don't update root_idx_ if there were 0 nodes before this iteration.
       --root_idx_;
       // Initialize the total sum with the sum of elements from the left subtree.
       data_[root_idx_ - 1] = data_[root_idx_];
@@ -506,7 +617,7 @@ void CumulativeHistogram<T>::resize(std::size_t num_elements) {
 
     // Allocate new data.
     std::vector<T> new_data;
-    const std::size_t new_data_size = num_elements + 1 + countNodesInTree(num_elements);
+    const std::size_t new_data_size = num_elements + 1 + Detail::countNodesInTree(num_elements);
     new_data.reserve(new_data_size);
     // Copy current elements.
     new_data.insert(new_data.end(), data_.begin(), data_.begin() + num_elements_);
