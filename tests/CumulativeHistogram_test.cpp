@@ -6,6 +6,21 @@
 namespace CumulativeHistogram_NS {
 namespace {
 
+template<class T>
+testing::AssertionResult CheckPartialSums(const CumulativeHistogram<T>& histogram) {
+  const std::span<const T> elements = histogram.elements();
+  T expected {};
+  for (std::size_t i = 0; i < elements.size(); ++i) {
+    expected += elements[i];
+    const T actual = histogram.partialSum(i);
+    if (actual != expected) {
+      return testing::AssertionFailure() <<
+        "Expected partialSum(" << i << ") to return " << expected << "; got " << actual;
+    }
+  }
+  return testing::AssertionSuccess();
+}
+
 TEST(CumulativeHistogram, DefaultConstructor) {
   CumulativeHistogram<int> histogram;
   EXPECT_EQ(histogram.size(), 0);
@@ -39,14 +54,12 @@ TEST(CumulativeHistogram, ConstructFromVector) {
 }
 
 TEST(CumulativeHistogram, ConstructFromRange) {
-  const std::vector<int> elements = {1, 2, 3, 4, 5, 6, 7};
+  constexpr std::array<int, 7> elements = {1, 2, 3, 4, 5, 6, 7};
   CumulativeHistogram<int> histogram{elements.begin(), elements.end()};
   EXPECT_EQ(histogram.size(), elements.size());
   EXPECT_EQ(histogram.totalSum(), std::accumulate(elements.begin(), elements.end(), 0));
-  for (std::size_t i = 0; i < elements.size(); ++i) {
-    const int partial_sum = std::accumulate(elements.begin(), elements.begin() + i + 1, 0);
-    EXPECT_EQ(histogram.partialSum(i), partial_sum);
-  }
+  // Check prefix sums.
+  EXPECT_TRUE(CheckPartialSums(histogram));
 }
 
 TEST(CumulativeHistogram, PopBack) {
@@ -54,6 +67,7 @@ TEST(CumulativeHistogram, PopBack) {
   CumulativeHistogram<unsigned int> histogram{ kElements.begin(), kElements.end() };
   const std::size_t initial_capacity = histogram.capacity();
   std::size_t num_elements = kElements.size();
+  // Remove all elements one by one.
   do {
     --num_elements;
     histogram.pop_back();
@@ -66,13 +80,112 @@ TEST(CumulativeHistogram, PopBack) {
       EXPECT_EQ(histogram.element(i), kElements[i]);
     }
     // Check prefix sums for indices [0; num_elements)
-    for (std::size_t i = 0; i < num_elements; ++i) {
-      const unsigned int partial_sum = std::accumulate(kElements.begin(), kElements.begin() + i + 1, 0u);
-      EXPECT_EQ(histogram.partialSum(i), partial_sum);
-    }
+    EXPECT_TRUE(CheckPartialSums(histogram));
   } while (num_elements > 0);
   EXPECT_TRUE(histogram.empty());
   EXPECT_EQ(histogram.size(), 0);
+}
+
+TEST(CumulativeHistogram, ResizeSameSize) {
+  constexpr std::array<unsigned int, 10> kElements = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+  CumulativeHistogram<unsigned int> histogram{ kElements.begin(), kElements.end() };
+  const std::span<const unsigned int> elements_old = histogram.elements();
+  const std::size_t capacity_old = histogram.capacity();
+  histogram.resize(kElements.size());
+  // Size should remain the same.
+  EXPECT_EQ(histogram.size(), kElements.size());
+  // Capacity should remain the same.
+  EXPECT_EQ(histogram.capacity(), capacity_old);
+  // Check that the elements haven't been reallocated.
+  EXPECT_EQ(histogram.elements().data(), elements_old.data());
+  // Elements [0; 10) must remain the same.
+  for (std::size_t i = 0; i < kElements.size(); ++i) {
+    EXPECT_EQ(histogram.element(i), kElements[i]);
+  }
+  // Check prefix sums.
+  EXPECT_TRUE(CheckPartialSums(histogram));
+}
+
+TEST(CumulativeHistogram, ResizeToFewerElements) {
+  constexpr std::array<unsigned int, 13> kElements = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 };
+  CumulativeHistogram<unsigned int> histogram{ kElements.begin(), kElements.end() };
+  const std::span<const unsigned int> elements_old = histogram.elements();
+  const std::size_t capacity_old = histogram.capacity();
+  constexpr std::size_t kNewSize = 5;
+  histogram.resize(kNewSize);
+  // Size should become kNewSize.
+  EXPECT_EQ(histogram.size(), kNewSize);
+  // Capacity should remain the same.
+  EXPECT_EQ(histogram.capacity(), capacity_old);
+  // Check that the elements haven't been reallocated.
+  EXPECT_EQ(histogram.elements().data(), elements_old.data());
+  // Elements [0; kNewSize) must remain the same.
+  for (std::size_t i = 0; i < kNewSize; ++i) {
+    EXPECT_EQ(histogram.element(i), kElements[i]);
+  }
+  // Validate the total sum.
+  EXPECT_EQ(histogram.totalSum(), std::accumulate(kElements.begin(), kElements.begin() + kNewSize, 0u));
+  // Check prefix sums.
+  EXPECT_TRUE(CheckPartialSums(histogram));
+}
+
+TEST(CumulativeHistogram, ResizeToMoreElementsWithinCapacity) {
+  constexpr std::array<unsigned int, 13> kElements = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 };
+  CumulativeHistogram<unsigned int> histogram{ kElements.begin(), kElements.end() };
+  const std::span<const unsigned int> elements_old = histogram.elements();
+  const std::size_t capacity_old = histogram.capacity();
+  // Resize to 5 elements.
+  const std::size_t kNewSize = 5;
+  histogram.resize(5);
+  // Resize back to 13 elements.
+  histogram.resize(kElements.size());
+  // Size should become kNewSize.
+  EXPECT_EQ(histogram.size(), kElements.size());
+  // Capacity should remain the same.
+  EXPECT_EQ(histogram.capacity(), capacity_old);
+  // Check that the elements haven't been reallocated.
+  EXPECT_EQ(histogram.elements().data(), elements_old.data());
+  // Elements [0; kNewSize) must remain the same.
+  for (std::size_t i = 0; i < kNewSize; ++i) {
+    EXPECT_EQ(histogram.element(i), kElements[i]);
+  }
+  // Elements [kNewSize; kElements.size()) must now be 0.
+  for (std::size_t i = kNewSize; i < kElements.size(); ++i) {
+    EXPECT_EQ(histogram.element(i), 0);
+  }
+  // Validate the total sum.
+  const unsigned int total_sum = std::accumulate(kElements.begin(), kElements.begin() + kNewSize, 0u);
+  EXPECT_EQ(histogram.totalSum(), total_sum);
+  // Check prefix sums.
+  EXPECT_TRUE(CheckPartialSums(histogram));
+}
+
+TEST(CumulativeHistogram, ResizeToMoreElementsOutsideCapacity) {
+  constexpr std::array<unsigned int, 5> kElements = { 1, 2, 3, 4, 5 };
+  CumulativeHistogram<unsigned int> histogram{ kElements.begin(), kElements.end() };
+  const std::span<const unsigned int> elements_old = histogram.elements();
+  // Resize to more elements than the histogram can currently store.
+  const std::size_t kNewSize = histogram.capacity() + 1;
+  histogram.resize(kNewSize);
+  // Size should become kNewSize.
+  EXPECT_EQ(histogram.size(), kNewSize);
+  // Capacity should become greater or equal to kNewSize.
+  EXPECT_GE(histogram.capacity(), kNewSize);
+  // Not checking if the elements have been reallocated, because in theory this is not guaranteed
+  // if the implementation uses realloc().
+  // Elements [0; kElements.size()) must remain the same.
+  for (std::size_t i = 0; i < kElements.size(); ++i) {
+    EXPECT_EQ(histogram.element(i), kElements[i]);
+  }
+  // Elements [kElements.size(), kNewSize) must now be 0.
+  for (std::size_t i = kElements.size(); i < kNewSize; ++i) {
+    EXPECT_EQ(histogram.element(i), 0);
+  }
+  // Total sum must remain the same.
+  const unsigned int total_sum = std::accumulate(kElements.begin(), kElements.end(), 0u);
+  EXPECT_EQ(histogram.totalSum(), total_sum);
+  // Check prefix sums.
+  EXPECT_TRUE(CheckPartialSums(histogram));
 }
 
 TEST(CumulativeHistogram, TotalSum) {

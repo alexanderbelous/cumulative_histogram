@@ -53,12 +53,12 @@ class CumulativeHistogram {
   // Time complexity: O(N), where N is the current number of elements.
   void reserve(std::size_t num_elements);
 
-  // Erases all elements
+  // Erases all elements.
   // The capacity remains unchanged.
-  void clear();
-
-  // TODO
-  void resize(std::size_t num_elements);
+  // Time complexity: O(N).
+  // TODO: could be O(1) if we require that T is an arithmetic type. However, that woukd be too restrictive:
+  //       e.g., there's nothing wrong with CumulativeHistogram<std::complex>.
+  void clear() noexcept;
 
   // Add a zero-initialized element to the end.
   // Time complexity: amortized O(1).
@@ -66,6 +66,8 @@ class CumulativeHistogram {
 
   // Add an element to the end.
   // Time complexity: amortized O(logN).
+  // Note: it's O(logN) not because we need to update O(logN) nodes (AFAIU, it's possible to
+  // only update O(1) nodes), but because we need to traverse the tree).
   void push_back(const T& value);
 
   // Removes the last element.
@@ -74,7 +76,7 @@ class CumulativeHistogram {
   //
   // TODO:
   //   AFAIU, it should be possible to make it O(1) at the cost of
-  // making push_back() a bit slower (though still having O(logN) time complexity).
+  // making push_back() a bit slower (though still having amortized O(logN) time complexity).
   //   When the rightmost element is removed, only the total sum actually needs to be updated.
   // Yes, other nodes are affected, but the affected nodes will not be accesed anymore
   // (the node is affected if it contains x[i]; if we remove x[i] then no valid call to
@@ -87,7 +89,20 @@ class CumulativeHistogram {
   //     1. To avoid zeroing out newly allocated memory. reserve(M) will have O(M) time coplexity
   //        if we zero-initialize, but only O(N) if we don't.
   //     2. To reduce the rounding errors when T is a floating-point type.
+  //
+  // TODO:
+  //   Should I call ~T() at least for the element that has been removed?
+  //   ~T() will likely be trivial, but doesn't have to be - e.g., one might want to instantiate
+  //   CumulativeHistogram for some BigInt class that uses heap storage.
+  //   Pros: It will reduce memory usage for the scenarios like BigInt.
+  //   Cons: I'd rather avoid tracking the lifetimes of individual counters.
   void pop_back();
+
+  // Changes the number of elements stored.
+  // \param num_elements - the new number of elements in the histogram.
+  // Time complexity: O(|N' - N|), if capacity() >= num_elements,
+  //                  O(N') otherwise.
+  void resize(std::size_t num_elements);
 
   // Sets the values of all elements to 0.
   // Time complexity: O(N).
@@ -407,6 +422,13 @@ constexpr std::size_t CumulativeHistogram<T>::capacity() const noexcept {
 }
 
 template<class T>
+void CumulativeHistogram<T>::clear() noexcept {
+  data_.clear();
+  num_elements_ = 0;
+  root_idx_ = 1;
+}
+
+template<class T>
 void CumulativeHistogram<T>::setZero() {
   std::fill(data_, T{});
 }
@@ -430,6 +452,48 @@ void CumulativeHistogram<T>::pop_back() {
     if (num_elements_ <= num_elements_in_left_subtree) {
       ++root_idx_;
     }
+  }
+}
+
+template<class T>
+void CumulativeHistogram<T>::resize(std::size_t num_elements) {
+  // Do nothing if N == N'
+  if (num_elements_ == num_elements) {
+    return;
+  }
+  // Remove the last N-N' elements if N > N'.
+  if (num_elements_ > num_elements) {
+    // TODO: replace with a decent implementation - this one is fucking terrible.
+    const std::size_t elements_to_remove = num_elements_ - num_elements;
+    for (std::size_t i = 0; i < elements_to_remove; ++i) {
+      pop_back();
+    }
+    return;
+  }
+  // Append N'-N elements if N < N'.
+  if (capacity() >= num_elements) {
+    // TODO: this won't work if pop_back() does't clean up after itself.
+    num_elements_ = num_elements;
+  } else {
+    // TODO: check if the tree for num_elements has our current tree as a subtree. If it does,
+    // then we can just std::copy() the current tree instead of building a new one.
+
+    // Allocate new data.
+    std::vector<T> new_data;
+    const std::size_t new_data_size = num_elements + 1 + countNodesInTree(num_elements);
+    new_data.reserve(new_data_size);
+    // Copy current elements.
+    new_data.insert(new_data.end(), data_.begin(), data_.begin() + num_elements_);
+    // Append new default-constructed elements and our auxiliary counters.
+    new_data.resize(new_data_size);
+
+    // TODO: don't replace the old data_ with new_data until the new tree is built -
+    // resize() should have a strong exception guarantee.
+    data_.swap(new_data);
+    num_elements_ = num_elements;
+    capacity_ = num_elements;
+    root_idx_ = capacity_ + 1;
+    rebuildTree();
   }
 }
 
