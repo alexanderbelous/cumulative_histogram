@@ -71,6 +71,22 @@ class CumulativeHistogram {
   // Removes the last element.
   // Throws std::logic_error if this->empty().
   // Time complexity: O(logN).
+  //
+  // TODO:
+  //   AFAIU, it should be possible to make it O(1) at the cost of
+  // making push_back() a bit slower (though still having O(logN) time complexity).
+  //   When the rightmost element is removed, only the total sum actually needs to be updated.
+  // Yes, other nodes are affected, but the affected nodes will not be accesed anymore
+  // (the node is affected if it contains x[i]; if we remove x[i] then no valid call to
+  // partialSum() will actually add values from the nodes that contain x[i]).
+  //   However, this means that these nodes will store garbage data; if we call push_back()
+  // afterwards, we'll need to ensure that it zero-initializes these nodes before incrementing
+  // them. This can still be done in O(logN) - e.g., push_back() can initialize the
+  // nodes that contain the new element, and there's at most O(log) of them.
+  //   Then again, we might want to do this in push_back() anyway for 2 reasons:
+  //     1. To avoid zeroing out newly allocated memory. reserve(M) will have O(M) time coplexity
+  //        if we zero-initialize, but only O(N) if we don't.
+  //     2. To reduce the rounding errors when T is a floating-point type.
   void pop_back();
 
   // Sets the values of all elements to 0.
