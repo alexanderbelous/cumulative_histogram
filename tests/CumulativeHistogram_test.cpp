@@ -1,6 +1,7 @@
 #include <cumulative_histogram/CumulativeHistogram.h>
 
 #include <array>
+#include <sstream>
 #include <gtest/gtest.h>
 
 namespace CumulativeHistogram_NS {
@@ -53,12 +54,24 @@ TEST(CumulativeHistogram, ConstructFromVector) {
   }
 }
 
-TEST(CumulativeHistogram, ConstructFromRange) {
+TEST(CumulativeHistogram, ConstructFromMultiPassRange) {
   constexpr std::array<int, 7> elements = {1, 2, 3, 4, 5, 6, 7};
   CumulativeHistogram<int> histogram{elements.begin(), elements.end()};
   EXPECT_EQ(histogram.size(), elements.size());
   EXPECT_EQ(histogram.totalSum(), std::accumulate(elements.begin(), elements.end(), 0));
-  // Check prefix sums.
+  EXPECT_TRUE(CheckPartialSums(histogram));
+}
+
+TEST(CumulativeHistogram, ConstructFromSinglePassRange) {
+  std::istringstream str("1 2 3 4 5");
+  CumulativeHistogram<int> histogram {std::istream_iterator<int>(str), std::istream_iterator<int>()};
+  EXPECT_EQ(histogram.size(), 5);
+  EXPECT_EQ(histogram.element(0), 1);
+  EXPECT_EQ(histogram.element(1), 2);
+  EXPECT_EQ(histogram.element(2), 3);
+  EXPECT_EQ(histogram.element(3), 4);
+  EXPECT_EQ(histogram.element(4), 5);
+  EXPECT_EQ(histogram.totalSum(), 15);
   EXPECT_TRUE(CheckPartialSums(histogram));
 }
 

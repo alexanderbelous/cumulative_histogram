@@ -42,6 +42,7 @@ class CumulativeHistogram {
   constexpr bool empty() const noexcept;
 
   // Returns the number of elements in the histogram.
+  // Time complexity: O(1).
   constexpr std::size_t size() const noexcept;
 
   // Returns the number of elements that can be held in currently allocated storage.
@@ -399,12 +400,29 @@ CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
   rebuildTree();
 }
 
-// TODO: if Iter allows multipass, we should only do 1 memory allocation.
 template<class T>
 template<class Iter>
-CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last):
-  CumulativeHistogram(std::vector<T>{first, last})
-{}
+CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last)
+{
+  using iterator_categoty = typename std::iterator_traits<Iter>::iterator_category;
+  std::size_t new_data_size;
+  if constexpr (std::is_same_v<iterator_categoty, std::input_iterator_tag>) {
+    // If Iter does not allow multipass, we need to materialize it first.
+    data_.assign(first, last);
+    num_elements_ = data_.size();
+    new_data_size = num_elements_ + 1 + countNodesInTree(num_elements_);
+  } else {
+    num_elements_ = std::distance(first, last);
+    new_data_size = num_elements_ + 1 + countNodesInTree(num_elements_);
+    data_.reserve(new_data_size);
+    data_.insert(data_.end(), first, last);
+  }
+  // Append new default-constructed elements and our auxiliary counters.
+  data_.resize(new_data_size);
+  capacity_ = num_elements_;
+  root_idx_ = capacity_ + 1;
+  rebuildTree();
+}
 
 template<class T>
 constexpr bool CumulativeHistogram<T>::empty() const noexcept {
