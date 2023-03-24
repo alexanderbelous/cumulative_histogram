@@ -474,6 +474,14 @@ void CumulativeHistogram<T>::resize(std::size_t num_elements) {
   if (capacity() >= num_elements) {
     // TODO: this won't work if pop_back() does't clean up after itself.
     num_elements_ = num_elements;
+    // TODO: I suppose the new value for root_idx_ could be computed in O(1), but
+    // we need to initialize the new nodes anyway, so the loop cannot be avoided.
+    while (num_elements_ > capacityCurrent()) {
+      // Update the root.
+      --root_idx_;
+      // Initialize the total sum with the sum of elements from the left subtree.
+      data_[root_idx_ - 1] = data_[root_idx_];
+    }
   } else {
     // TODO: check if the tree for num_elements has our current tree as a subtree. If it does,
     // then we can just std::copy() the current tree instead of building a new one.
