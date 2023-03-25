@@ -346,5 +346,24 @@ TEST(CumulativeHistogram, PartialSum) {
   EXPECT_EQ(histogram.partialSum(8), 16);
 }
 
+TEST(CumulativeHistogram, LowerBound) {
+  constexpr std::array<unsigned int, 5> kElements = {1, 2, 3, 4, 5};
+  const CumulativeHistogram<unsigned int> histogram {kElements.begin(), kElements.end()};
+  EXPECT_EQ(histogram.lowerBound(0) - histogram.begin(), 0);  // partialSum(0) = 1 >= 0
+  EXPECT_EQ(histogram.lowerBound(1) - histogram.begin(), 0);  // partialSum(0) = 1 >= 1
+  EXPECT_EQ(histogram.lowerBound(2) - histogram.begin(), 1);  // partialSum(1) = 3 >= 2
+  EXPECT_EQ(histogram.lowerBound(3) - histogram.begin(), 1);  // partialSum(1) = 3 >= 3
+  EXPECT_EQ(histogram.lowerBound(4) - histogram.begin(), 2);  // partialSum(2) = 6 >= 4
+  EXPECT_EQ(histogram.lowerBound(5) - histogram.begin(), 2);  // partialSum(2) = 6 >= 5
+  EXPECT_EQ(histogram.lowerBound(6) - histogram.begin(), 2);  // partialSum(2) = 6 >= 6
+  EXPECT_EQ(histogram.lowerBound(9) - histogram.begin(), 3);  // partialSum(3) = 10 >= 9
+  EXPECT_EQ(histogram.lowerBound(10) - histogram.begin(), 3); // partialSum(3) = 10 >= 10
+  EXPECT_EQ(histogram.lowerBound(11) - histogram.begin(), 4); // partialSum(4) = 15 >= 10
+  EXPECT_EQ(histogram.lowerBound(12) - histogram.begin(), 4); // partialSum(4) = 15 >= 12
+  EXPECT_EQ(histogram.lowerBound(14) - histogram.begin(), 4); // partialSum(4) = 15 >= 14
+  EXPECT_EQ(histogram.lowerBound(15) - histogram.begin(), 4); // partialSum(4) = 15 >= 15
+  EXPECT_EQ(histogram.lowerBound(16),  histogram.end());      // partialSum(4) = 15 < 16
+}
+
 }
 }

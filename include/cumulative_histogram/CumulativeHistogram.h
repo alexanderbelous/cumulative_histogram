@@ -164,9 +164,16 @@ class CumulativeHistogram {
   // Time complexity: O(1).
   constexpr T totalSum() const;
 
-  // Find the first element k, for which partialSum(k) is not less than the specified value.
+  // Find the first element, for which partialSum() is not less than the specified value.
+  // Expects that all elements are non-negative. The behavior is undefined otherwise.
+  // \return an iterator to the element satisfying the following:
+  //   * If the histogram is empty, returns end().
+  //   * If totalSum() < value, returns end().
+  //   * If element(0) >= value, returns begin().
+  //   * Otherwise, returns an iterator it, for which
+  //       partialSum(std::prev(it)-begin()) < value <= partialSum(it-begin())
   // Time complexity: O(log(N)).
-  // TODO: implement.
+  const_iterator lowerBound(const T& value) const;
 
  private:
   // Implementation details.
@@ -762,6 +769,42 @@ constexpr T CumulativeHistogram<T>::totalSum() const {
     throw std::logic_error("CumulativeHistogram::totalSum(): the histogram is empty.");
   }
   return data_[root_idx_ - 1];
+}
+
+template<class T>
+typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::lowerBound(const T& value) const {
+  if ((num_elements_ == 0) || (totalSum() < value)) {
+    return end();
+  }
+  // Now we now that there is some index k, for which partialSum(k) >= value.
+  T partial_sum {};
+  // Tree representing the elements [0; N).
+  const std::span<const T> nodes = std::span<const T>{ data_ }.subspan(root_idx_, numNodesCurrent());
+  TreeView<false> tree(nodes, 0, capacityCurrent() - 1);
+  while (!tree.empty()) {
+    // The root of the tree stores the sum of all elements [first; middle].
+    const std::size_t middle = tree.pivot();
+    // Partial sum for elements [0; middle]
+    const T partial_sum_new = partial_sum + tree.root();
+    if (partial_sum_new < value)
+    {
+      // OK, we don't need to check the left tree, because partialSum(i) < value for i in [0; middle).
+      partial_sum = partial_sum_new;
+      tree = tree.rightChild();
+    }
+    else if (partial_sum_new == value) {
+      return begin() + middle;
+    } else {
+      // OK, we don't need to check the right tree because partialSum(i) > value for i in [middle; N).
+      tree = tree.leftChild();
+    }
+  }
+  const std::size_t k_lower = tree.elementFirst(); // partialSum(i) < value for i in [0; k_lower)
+  const std::size_t k_upper = tree.elementLast();  // partialSum(k_upper) > value
+  if (partial_sum + data_[k_lower] >= value) {
+    return begin() + k_lower;
+  }
+  return begin() + k_upper;
 }
 
 }  // namespace CumulativeHistogram_NS
