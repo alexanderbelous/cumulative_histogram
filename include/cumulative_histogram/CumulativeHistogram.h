@@ -33,8 +33,8 @@ class CumulativeHistogram {
   using const_pointer = const T*;
   using iterator = const T*;
   using const_iterator = const T*;
-  using reverse_iterator = const T*;
-  using const_reverse_iterator = const T*;
+  using reverse_iterator = std::reverse_iterator<iterator>;
+  using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
   // Constructs an empty histogram.
   constexpr CumulativeHistogram() noexcept = default;
@@ -51,6 +51,18 @@ class CumulativeHistogram {
   // Time complexity: O(N), where N is the distance between first and last.
   template<class Iter>
   explicit CumulativeHistogram(Iter first, Iter last);
+
+  // Returns an iterator to the first element.
+  constexpr const_iterator begin() const noexcept;
+
+  // Returns an iterator past the last element.
+  constexpr const_iterator end() const noexcept;
+
+  // Returns a reverse iterator to the last element.
+  constexpr const_reverse_iterator rbegin() const noexcept;
+
+  // Returns a reverse iterator preceding the first element.
+  constexpr const_reverse_iterator rend() const noexcept;
 
   // Returns true if the number of elements is greater than 0, false otherwise.
   // Time complexity: O(1).
@@ -502,6 +514,30 @@ CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last)
   capacity_ = num_elements_;
   root_idx_ = capacity_ + 1;
   rebuildTree();
+}
+
+template<class T>
+constexpr
+typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::begin() const noexcept {
+  return data_.data();
+}
+
+template<class T>
+constexpr
+typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::end() const noexcept {
+  return data_.data() + num_elements_;
+}
+
+template<class T>
+constexpr
+typename CumulativeHistogram<T>::const_reverse_iterator CumulativeHistogram<T>::rbegin() const noexcept {
+  return std::make_reverse_iterator(end());
+}
+
+template<class T>
+constexpr
+typename CumulativeHistogram<T>::const_reverse_iterator CumulativeHistogram<T>::rend() const noexcept {
+  return std::make_reverse_iterator(begin());
 }
 
 template<class T>

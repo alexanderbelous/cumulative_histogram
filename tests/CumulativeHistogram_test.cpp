@@ -75,6 +75,30 @@ TEST(CumulativeHistogram, ConstructFromSinglePassRange) {
   EXPECT_TRUE(CheckPartialSums(histogram));
 }
 
+TEST(CumulativeHistogram, Iterators) {
+  constexpr std::array<unsigned int, 5> kElements = { 1, 2, 3, 4, 5 };
+  CumulativeHistogram<unsigned int> histogram(kElements.begin(), kElements.end());
+  EXPECT_NE(histogram.begin(), histogram.end());
+  EXPECT_EQ(std::distance(histogram.begin(), histogram.end()), 5);
+  auto it = histogram.begin();
+  for (std::size_t i = 0; i < kElements.size(); ++i) {
+    EXPECT_EQ(*it, kElements[i]);
+    ++it;
+  }
+}
+
+TEST(CumulativeHistogram, ReverseIterators) {
+  constexpr std::array<unsigned int, 5> kElements = { 1, 2, 3, 4, 5 };
+  CumulativeHistogram<unsigned int> histogram(kElements.begin(), kElements.end());
+  EXPECT_NE(histogram.rbegin(), histogram.rend());
+  EXPECT_EQ(std::distance(histogram.rbegin(), histogram.rend()), 5);
+  auto it = histogram.rbegin();
+  for (auto it_arr = kElements.rbegin(); it_arr != kElements.rend(); ++it_arr) {
+    EXPECT_EQ(*it, *it_arr);
+    ++it;
+  }
+}
+
 TEST(CumulativeHistogram, Reserve) {
   constexpr std::array<unsigned int, 5> kElements = { 1, 2, 3, 4, 5};
   // Construct a histogram capable of storing 5 elements.
