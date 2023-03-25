@@ -173,7 +173,9 @@ class CumulativeHistogram {
   //   * Otherwise, returns an iterator it, for which
   //       partialSum(std::prev(it)-begin()) < value <= partialSum(it-begin())
   // Time complexity: O(log(N)).
-  const_iterator lowerBound(const T& value) const;
+  // TODO: return std::pair<const_iterator, T> instead, where the second element is the partial sum.
+  // and it will be more efficient that calling partialSum() after this call.
+  const_iterator lowerBound(const T& value) const noexcept;
 
  private:
   // Implementation details.
@@ -309,16 +311,16 @@ public:
     return element_first_ + (element_last_ - element_first_) / 2;
   }
 
-  reference root() const {
+  constexpr reference root() const {
     return nodes_.front();
   }
 
-  constexpr TreeView leftChild() const {
+  constexpr TreeView leftChild() const noexcept {
     const std::size_t num_nodes_left = nodes_.size() / 2;
     return TreeView(nodes_.subspan(1, num_nodes_left), element_first_, pivot());
   }
 
-  constexpr TreeView rightChild() const {
+  constexpr TreeView rightChild() const noexcept {
     const std::size_t num_nodes_left = nodes_.size() / 2;
     const std::size_t num_nodes_right = (nodes_.size() - 1) / 2;
     return TreeView(nodes_.subspan(1 + num_nodes_left, num_nodes_right), pivot() + 1, element_last_);
@@ -772,8 +774,9 @@ constexpr T CumulativeHistogram<T>::totalSum() const {
 }
 
 template<class T>
-typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::lowerBound(const T& value) const {
-  if ((num_elements_ == 0) || (totalSum() < value)) {
+typename CumulativeHistogram<T>::const_iterator
+CumulativeHistogram<T>::lowerBound(const T& value) const noexcept {
+  if ((num_elements_ == 0) || (data_[root_idx_ - 1] < value)) {
     return end();
   }
   // Now we now that there is some index k, for which partialSum(k) >= value.
