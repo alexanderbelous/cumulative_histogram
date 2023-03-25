@@ -29,7 +29,7 @@ testing::AssertionResult CheckLowerBound(const CumulativeHistogram<T>& histogram
   T partial_sum {};
   while (iter_expected != histogram.end()) {
     partial_sum += *iter_expected;
-    if (partial_sum >= value) {
+    if (!(partial_sum < value)) {
       break;
     }
     ++iter_expected;
@@ -39,6 +39,29 @@ testing::AssertionResult CheckLowerBound(const CumulativeHistogram<T>& histogram
   auto [iter_actual, partial_sum_actual] = histogram.lowerBound(value);
   if ((iter_expected != iter_actual) || (partial_sum_expected != partial_sum_actual)) {
     return testing::AssertionFailure() << "Expected lowerBound(" << value << ") to return {"
+      << iter_expected << ", " << partial_sum_expected << "}; got {"
+      << iter_actual << ", " << partial_sum_actual << "}.";
+  }
+  return testing::AssertionSuccess();
+}
+
+template<class T>
+testing::AssertionResult CheckUpperBound(const CumulativeHistogram<T>& histogram, const T& value) {
+  // Find the upper bound safely in O(N).
+  auto iter_expected = histogram.begin();
+  T partial_sum {};
+  while (iter_expected != histogram.end()) {
+    partial_sum += *iter_expected;
+    if (value < partial_sum) {
+      break;
+    }
+    ++iter_expected;
+  }
+  const T partial_sum_expected = (iter_expected == histogram.end()) ? T{} : partial_sum;
+  // Check that CumulativeHistogram::upperBound() returns the same result.
+  auto [iter_actual, partial_sum_actual] = histogram.upperBound(value);
+  if ((iter_expected != iter_actual) || (partial_sum_expected != partial_sum_actual)) {
+    return testing::AssertionFailure() << "Expected upperBound(" << value << ") to return {"
       << iter_expected << ", " << partial_sum_expected << "}; got {"
       << iter_actual << ", " << partial_sum_actual << "}.";
   }
@@ -377,6 +400,28 @@ TEST(CumulativeHistogram, LowerBound) {
   for (unsigned int value = 0; value < 20; ++value) {
     EXPECT_TRUE(CheckLowerBound(histogram, value));
   }
+}
+
+TEST(CumulativeHistogram, LowerBoundZeros) {
+  constexpr std::array<unsigned int, 9> kElements = { 1, 0, 0, 0, 0, 0, 0, 0, 0 };
+  const CumulativeHistogram<unsigned int> histogram{ kElements.begin(), kElements.end() };
+  EXPECT_TRUE(CheckLowerBound(histogram, 0u));
+  EXPECT_TRUE(CheckLowerBound(histogram, 1u));
+}
+
+TEST(CumulativeHistogram, UpperBound) {
+  constexpr std::array<unsigned int, 9> kElements = {1, 2, 3, 4, 5, 0, 0, 1, 2};
+  const CumulativeHistogram<unsigned int> histogram {kElements.begin(), kElements.end()};
+  for (unsigned int value = 0; value < 20; ++value) {
+    EXPECT_TRUE(CheckUpperBound(histogram, value));
+  }
+}
+
+TEST(CumulativeHistogram, UpperBoundZeros) {
+  constexpr std::array<unsigned int, 9> kElements = { 1, 0, 0, 0, 0, 0, 0, 0, 0 };
+  const CumulativeHistogram<unsigned int> histogram{ kElements.begin(), kElements.end() };
+  EXPECT_TRUE(CheckUpperBound(histogram, 0u));
+  EXPECT_TRUE(CheckUpperBound(histogram, 1u));
 }
 
 }

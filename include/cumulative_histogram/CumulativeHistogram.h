@@ -168,11 +168,20 @@ class CumulativeHistogram {
   constexpr T totalSum() const;
 
   // Find the first element, for which partialSum() is not less than the specified value.
-  // Expects that all elements are non-negative. The behavior is undefined otherwise.
+  // The behavior is undefined if any element is negative or if computing the total sum
+  // causes an overflow for T.
   // \return { begin()+k, partialSum(k) }, where k is the first element for which partialSum(k) >= value,
   //         or { end(), T{} } if there is no such k.
   // Time complexity: O(log(N)).
   std::pair<const_iterator, T> lowerBound(const T& value) const;
+
+  // Find the first element, for which partialSum() is greater than the specified value.
+  // The behavior is undefined if any element is negative or if computing the total sum
+  // causes an overflow for T.
+  // \return { begin()+k, partialSum(k) }, where k is the first element for which partialSum(k) > value,
+  //         or { end(), T{} } if there is no such k.
+  // Time complexity: O(log(N)).
+  std::pair<const_iterator, T> upperBound(const T& value) const;
 
  private:
   // Implementation details.
@@ -184,6 +193,13 @@ class CumulativeHistogram {
 
   // Returns the number of nodes in the current tree (not including the element storing the total sum).
   constexpr size_type numNodesCurrent() const noexcept;
+
+  // Shared implementation for lowerBound() and upperBound().
+  // If Upper == false, finds the first element k for which partialSum(k) >= value,
+  //          otherwise finds the first element k for which partialSum(k) > value.
+  // In both cases objects of type T are compared only using operator<.
+  template<bool Upper>
+  std::pair<const_iterator, T> lowerBoundImpl(const T& value) const;
 
   // Rebuilds the tree data.
   // Time complexity: O(N).
@@ -771,10 +787,18 @@ constexpr T CumulativeHistogram<T>::totalSum() const {
 }
 
 template<class T>
+template<bool Upper>
 std::pair<typename CumulativeHistogram<T>::const_iterator, T>
-CumulativeHistogram<T>::lowerBound(const T& value) const {
+CumulativeHistogram<T>::lowerBoundImpl(const T& value) const {
+  struct LessEqual {
+    bool operator()(const T& lhs, const T& rhs) const { return !(rhs < lhs); }
+  };
+  // Use strict comparison for lowerBound, non-strict comparison for upperBound.
+  using Compare = std::conditional_t<Upper, LessEqual, std::less<T>>;
+  const Compare is_less;
+
   // Check if there is an index k for which partialSum(k) >= value.
-  if ((num_elements_ == 0) || (data_[root_idx_ - 1] < value)) {
+  if ((num_elements_ == 0) || is_less(data_[root_idx_ - 1], value)) {
     return { end(), T{} };
   }
   T partial_sum_before_lower {};
@@ -782,22 +806,17 @@ CumulativeHistogram<T>::lowerBound(const T& value) const {
   // Tree representing the elements [k_lower; k_upper] = [0; N-1].
   const std::span<const T> nodes = std::span<const T>{ data_ }.subspan(root_idx_, numNodesCurrent());
   TreeView<false> tree(nodes, 0, capacityCurrent() - 1);
-  while (!tree.empty())
-  {
+  while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [k_lower; middle].
     // Partial sum for elements [0; middle]
     T partial_sum_middle = partial_sum_before_lower + tree.root();
-    if (partial_sum_middle < value) {
+    if (is_less(partial_sum_middle, value)) {
       // OK, we don't need to check the left tree, because partialSum(i) < value for i in [0; middle].
       // k_lower = middle + 1;
       partial_sum_before_lower = std::move(partial_sum_middle);
       tree = tree.rightChild();
-    } else if (partial_sum_middle == value) {
-      // Great, we found k = middle.
-      const std::size_t middle = tree.pivot();
-      return { begin() + middle, std::move(partial_sum_middle) };
     } else {
-      // No need to check the right tree because partialSum(i) > value for i in [middle; N).
+      // No need to check the right tree because partialSum(i) >= value for i in [middle; N).
       // Note that it's still possible that middle is the element we're looking for.
       // k_upper = middle;
       partial_sum_upper = std::move(partial_sum_middle);
@@ -807,10 +826,22 @@ CumulativeHistogram<T>::lowerBound(const T& value) const {
   const std::size_t k_lower = tree.elementFirst(); // partialSum(i) < value for all i < k_lower
   const std::size_t k_upper = tree.elementLast();  // partialSum(k_upper) > value
   partial_sum_before_lower += data_[k_lower];
-  if (partial_sum_before_lower >= value) {
+  if (!is_less(partial_sum_before_lower, value)) {
     return { begin() + k_lower, partial_sum_before_lower };
   }
   return { begin() + k_upper, partial_sum_upper };
+}
+
+template<class T>
+std::pair<typename CumulativeHistogram<T>::const_iterator, T>
+CumulativeHistogram<T>::lowerBound(const T& value) const {
+  return lowerBoundImpl<false>(value);
+}
+
+template<class T>
+std::pair<typename CumulativeHistogram<T>::const_iterator, T>
+CumulativeHistogram<T>::upperBound(const T& value) const {
+  return lowerBoundImpl<true>(value);
 }
 
 }  // namespace CumulativeHistogram_NS
