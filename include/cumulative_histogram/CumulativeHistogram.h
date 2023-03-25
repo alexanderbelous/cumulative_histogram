@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <span>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace CumulativeHistogram_NS {
@@ -168,16 +169,10 @@ class CumulativeHistogram {
 
   // Find the first element, for which partialSum() is not less than the specified value.
   // Expects that all elements are non-negative. The behavior is undefined otherwise.
-  // \return an iterator to the element satisfying the following:
-  //   * If the histogram is empty, returns end().
-  //   * If totalSum() < value, returns end().
-  //   * If element(0) >= value, returns begin().
-  //   * Otherwise, returns an iterator it, for which
-  //       partialSum(std::prev(it)-begin()) < value <= partialSum(it-begin())
+  // \return { begin()+k, partialSum(k) }, where k is the first element for which partialSum(k) >= value,
+  //         or { end(), T{} } if there is no such k.
   // Time complexity: O(log(N)).
-  // TODO: return std::pair<const_iterator, T> instead, where the second element is the partial sum.
-  // and it will be more efficient that calling partialSum() after this call.
-  const_iterator lowerBound(const T& value) const noexcept;
+  std::pair<const_iterator, T> lowerBound(const T& value) const;
 
  private:
   // Implementation details.
@@ -776,40 +771,46 @@ constexpr T CumulativeHistogram<T>::totalSum() const {
 }
 
 template<class T>
-typename CumulativeHistogram<T>::const_iterator
-CumulativeHistogram<T>::lowerBound(const T& value) const noexcept {
+std::pair<typename CumulativeHistogram<T>::const_iterator, T>
+CumulativeHistogram<T>::lowerBound(const T& value) const {
+  // Check if there is an index k for which partialSum(k) >= value.
   if ((num_elements_ == 0) || (data_[root_idx_ - 1] < value)) {
-    return end();
+    return { end(), T{} };
   }
-  // Now we now that there is some index k, for which partialSum(k) >= value.
-  T partial_sum {};
-  // Tree representing the elements [0; N).
+  T partial_sum_before_lower {};
+  T partial_sum_upper = data_[root_idx_ - 1];
+  // Tree representing the elements [k_lower; k_upper] = [0; N-1].
   const std::span<const T> nodes = std::span<const T>{ data_ }.subspan(root_idx_, numNodesCurrent());
   TreeView<false> tree(nodes, 0, capacityCurrent() - 1);
-  while (!tree.empty()) {
-    // The root of the tree stores the sum of all elements [first; middle].
-    const std::size_t middle = tree.pivot();
+  while (!tree.empty())
+  {
+    // The root of the tree stores the sum of all elements [k_lower; middle].
     // Partial sum for elements [0; middle]
-    const T partial_sum_new = partial_sum + tree.root();
-    if (partial_sum_new < value)
-    {
-      // OK, we don't need to check the left tree, because partialSum(i) < value for i in [0; middle).
-      partial_sum = partial_sum_new;
+    T partial_sum_middle = partial_sum_before_lower + tree.root();
+    if (partial_sum_middle < value) {
+      // OK, we don't need to check the left tree, because partialSum(i) < value for i in [0; middle].
+      // k_lower = middle + 1;
+      partial_sum_before_lower = std::move(partial_sum_middle);
       tree = tree.rightChild();
-    }
-    else if (partial_sum_new == value) {
-      return begin() + middle;
+    } else if (partial_sum_middle == value) {
+      // Great, we found k = middle.
+      const std::size_t middle = tree.pivot();
+      return { begin() + middle, std::move(partial_sum_middle) };
     } else {
-      // OK, we don't need to check the right tree because partialSum(i) > value for i in [middle; N).
+      // No need to check the right tree because partialSum(i) > value for i in [middle; N).
+      // Note that it's still possible that middle is the element we're looking for.
+      // k_upper = middle;
+      partial_sum_upper = std::move(partial_sum_middle);
       tree = tree.leftChild();
     }
   }
-  const std::size_t k_lower = tree.elementFirst(); // partialSum(i) < value for i in [0; k_lower)
+  const std::size_t k_lower = tree.elementFirst(); // partialSum(i) < value for all i < k_lower
   const std::size_t k_upper = tree.elementLast();  // partialSum(k_upper) > value
-  if (partial_sum + data_[k_lower] >= value) {
-    return begin() + k_lower;
+  partial_sum_before_lower += data_[k_lower];
+  if (partial_sum_before_lower >= value) {
+    return { begin() + k_lower, partial_sum_before_lower };
   }
-  return begin() + k_upper;
+  return { begin() + k_upper, partial_sum_upper };
 }
 
 }  // namespace CumulativeHistogram_NS

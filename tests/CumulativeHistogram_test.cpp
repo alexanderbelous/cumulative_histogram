@@ -22,6 +22,31 @@ testing::AssertionResult CheckPartialSums(const CumulativeHistogram<T>& histogra
   return testing::AssertionSuccess();
 }
 
+template<class T>
+testing::AssertionResult CheckLowerBound(const CumulativeHistogram<T>& histogram, const T& value) {
+  // Find the lower bound safely in O(N).
+  auto iter_expected = histogram.begin();
+  T partial_sum {};
+  while (iter_expected != histogram.end()) {
+    partial_sum += *iter_expected;
+    if (partial_sum >= value) {
+      break;
+    }
+    ++iter_expected;
+  }
+  const T partial_sum_expected = (iter_expected == histogram.end()) ? T{} : partial_sum;
+  // Check that CumulativeHistogram::lowerBound() returns the same result.
+  auto [iter_actual, partial_sum_actual] = histogram.lowerBound(value);
+  if ((iter_expected != iter_actual) || (partial_sum_expected != partial_sum_actual)) {
+    return testing::AssertionFailure() << "Expected lowerBound(" << value << ") to return {"
+      << iter_expected << ", " << partial_sum_expected << "}; got {"
+      << iter_actual << ", " << partial_sum_actual << "}.";
+  }
+  return testing::AssertionSuccess();
+}
+
+
+
 TEST(CumulativeHistogram, DefaultConstructor) {
   CumulativeHistogram<int> histogram;
   EXPECT_EQ(histogram.size(), 0);
@@ -347,22 +372,11 @@ TEST(CumulativeHistogram, PartialSum) {
 }
 
 TEST(CumulativeHistogram, LowerBound) {
-  constexpr std::array<unsigned int, 5> kElements = {1, 2, 3, 4, 5};
+  constexpr std::array<unsigned int, 9> kElements = {1, 2, 3, 4, 5, 0, 0, 1, 2};
   const CumulativeHistogram<unsigned int> histogram {kElements.begin(), kElements.end()};
-  EXPECT_EQ(histogram.lowerBound(0) - histogram.begin(), 0);  // partialSum(0) = 1 >= 0
-  EXPECT_EQ(histogram.lowerBound(1) - histogram.begin(), 0);  // partialSum(0) = 1 >= 1
-  EXPECT_EQ(histogram.lowerBound(2) - histogram.begin(), 1);  // partialSum(1) = 3 >= 2
-  EXPECT_EQ(histogram.lowerBound(3) - histogram.begin(), 1);  // partialSum(1) = 3 >= 3
-  EXPECT_EQ(histogram.lowerBound(4) - histogram.begin(), 2);  // partialSum(2) = 6 >= 4
-  EXPECT_EQ(histogram.lowerBound(5) - histogram.begin(), 2);  // partialSum(2) = 6 >= 5
-  EXPECT_EQ(histogram.lowerBound(6) - histogram.begin(), 2);  // partialSum(2) = 6 >= 6
-  EXPECT_EQ(histogram.lowerBound(9) - histogram.begin(), 3);  // partialSum(3) = 10 >= 9
-  EXPECT_EQ(histogram.lowerBound(10) - histogram.begin(), 3); // partialSum(3) = 10 >= 10
-  EXPECT_EQ(histogram.lowerBound(11) - histogram.begin(), 4); // partialSum(4) = 15 >= 10
-  EXPECT_EQ(histogram.lowerBound(12) - histogram.begin(), 4); // partialSum(4) = 15 >= 12
-  EXPECT_EQ(histogram.lowerBound(14) - histogram.begin(), 4); // partialSum(4) = 15 >= 14
-  EXPECT_EQ(histogram.lowerBound(15) - histogram.begin(), 4); // partialSum(4) = 15 >= 15
-  EXPECT_EQ(histogram.lowerBound(16),  histogram.end());      // partialSum(4) = 15 < 16
+  for (unsigned int value = 0; value < 20; ++value) {
+    EXPECT_TRUE(CheckLowerBound(histogram, value));
+  }
 }
 
 }
