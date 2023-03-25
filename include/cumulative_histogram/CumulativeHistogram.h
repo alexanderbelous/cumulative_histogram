@@ -24,12 +24,24 @@ namespace CumulativeHistogram_NS {
 template<class T>
 class CumulativeHistogram {
  public:
+  using value_type = T;
+  using size_type = std::size_t;
+  using difference_type = std::ptrdiff_t;
+  using reference = const T&;
+  using const_reference = const T&;
+  using pointer = const T*;
+  using const_pointer = const T*;
+  using iterator = const T*;
+  using const_iterator = const T*;
+  using reverse_iterator = const T*;
+  using const_reverse_iterator = const T*;
+
   // Constructs an empty histogram.
   constexpr CumulativeHistogram() noexcept = default;
 
   // Constructs a cumulative histogram for N zero-initialized elements.
   // Time complexity: O(N).
-  explicit CumulativeHistogram(std::size_t num_elements);
+  explicit CumulativeHistogram(size_type num_elements);
 
   // Constructs a cumulative histogram for the specified elements.
   // TODO: remove this contructor if you decide not to store data in std::vector.
@@ -46,16 +58,16 @@ class CumulativeHistogram {
 
   // Returns the number of elements in the histogram.
   // Time complexity: O(1).
-  constexpr std::size_t size() const noexcept;
+  constexpr size_type size() const noexcept;
 
   // Returns the number of elements that can be held in currently allocated storage.
   // Time complexity: O(1).
-  constexpr std::size_t capacity() const noexcept;
+  constexpr size_type capacity() const noexcept;
 
   // Reserves memory for a histogram capable of storing the specified number of elements.
   // The values of existing elements remain unchanged.
   // Time complexity: O(N), where N is the current number of elements.
-  void reserve(std::size_t num_elements);
+  void reserve(size_type num_elements);
 
   // Erases all elements.
   // The capacity remains unchanged.
@@ -106,7 +118,7 @@ class CumulativeHistogram {
   // \param num_elements - the new number of elements in the histogram.
   // Time complexity: O(|N' - N|), if capacity() >= num_elements,
   //                  O(N') otherwise.
-  void resize(std::size_t num_elements);
+  void resize(size_type num_elements);
 
   // Sets the values of all elements to 0.
   // Time complexity: O(N).
@@ -123,17 +135,17 @@ class CumulativeHistogram {
   // Access the specified element.
   // Throws std::out_of_range if k >= size().
   // Time complexity: O(1).
-  const T& element(std::size_t k) const;
+  const_reference element(size_type k) const;
 
   // Increment the specified element.
   // Throws std::out_of_range if k >= size().
   // Time complexity: O(log(N)).
-  void increment(std::size_t k, const T& value = 1);
+  void increment(size_type k, const T& value = 1);
 
   // Returns the partial sum of the first K elements.
   // Throws std::out_of_range if k >= size().
   // Time complexity: O(log(N)).
-  T partialSum(std::size_t k) const;
+  T partialSum(size_type k) const;
 
   // Returns the total sum of all elements.
   // Throws std::logic_error if this->empty().
@@ -150,10 +162,10 @@ class CumulativeHistogram {
 
   // Returns the maximum number of elements that can represented by the current tree.
   //   num_elements <= capacityCurrent() <= capacity_
-  constexpr std::size_t capacityCurrent() const noexcept;
+  constexpr size_type capacityCurrent() const noexcept;
 
   // Returns the number of nodes in the current tree (not including the element storing the total sum).
-  constexpr std::size_t numNodesCurrent() const noexcept;
+  constexpr size_type numNodesCurrent() const noexcept;
 
   // Rebuilds the tree data.
   // Time complexity: O(N).
@@ -174,9 +186,9 @@ class CumulativeHistogram {
   // In fact, unique_ptr<T[]> will do fine.
   std::vector<T> data_;
   // The number of elements N.
-  std::size_t num_elements_ = 0;
+  size_type num_elements_ = 0;
   // Current capacity Nmax.
-  std::size_t capacity_ = 0;
+  size_type capacity_ = 0;
   // Index of the root node.
   // * This is always equal to
   //   capacity_ + 1 + Detail::findDeepestNodeForElements(num_elements_, capacity_)
@@ -184,7 +196,7 @@ class CumulativeHistogram {
   // * data_[root_idx_] stores the total sum of elements [0; num_elements_) unless
   //   the histogram is empty.
   // TODO: consider removing and calling Detail::findDeepestNodeForElements() when needed.
-  std::size_t root_idx_ = 1;
+  size_type root_idx_ = 1;
 };
 
 // ----==== Implementation ====----
@@ -388,18 +400,20 @@ class CumulativeHistogram<T>::Detail {
 };
 
 template<class T>
-constexpr std::size_t CumulativeHistogram<T>::capacityCurrent() const noexcept {
+constexpr
+typename CumulativeHistogram<T>::size_type
+CumulativeHistogram<T>::capacityCurrent() const noexcept {
   // 1. Determine the depth of the current root node in the "full" tree.
   // Note that there aren't actually any nodes if capacity_ < 3. In that case root_idx_
   // should still equal capacity_ + 1 (even though data[root_idx_] is out of range).
   // level will be 0, and this function will simply return capacity_.
-  const std::size_t level = root_idx_ - capacity_ - 1;
+  const size_type level = root_idx_ - capacity_ - 1;
   // 2. f(0) = Nmax
   //    f(1) = ceil(f(0)/2) = (Nmax+1)/2
   //    f(2) = ceil(f(1)/2) = ((Nmax+1)/2 + 1)/2 = (Nmax+3)/4 = ceil(Nmax/4)
   //    f(3) = ceil(f(2)/2) = (Nmax+7)/8 = ceil(Nmax/8)
   //    f(N) = ceil(Nmax/2^N) = (Nmax + 2^N - 1) / 2^N
-  return (capacity_ + (static_cast<std::size_t>(1) << level) - 1) >> level;
+  return (capacity_ + (static_cast<size_type>(1) << level) - 1) >> level;
 }
 
 template<class T>
@@ -433,7 +447,7 @@ void CumulativeHistogram<T>::rebuildTree() noexcept {
 }
 
 template<class T>
-CumulativeHistogram<T>::CumulativeHistogram(std::size_t num_elements):
+CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
   data_(num_elements ? num_elements + 1 + Detail::countNodesInTree(num_elements) : 0),
   num_elements_(num_elements),
   capacity_(num_elements),
@@ -471,7 +485,7 @@ template<class Iter>
 CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last)
 {
   using iterator_categoty = typename std::iterator_traits<Iter>::iterator_category;
-  std::size_t new_data_size;
+  size_type new_data_size;
   if constexpr (std::is_same_v<iterator_categoty, std::input_iterator_tag>) {
     // If Iter does not allow multipass, we need to materialize it first.
     data_.assign(first, last);
@@ -496,22 +510,26 @@ constexpr bool CumulativeHistogram<T>::empty() const noexcept {
 }
 
 template<class T>
-constexpr std::size_t CumulativeHistogram<T>::size() const noexcept {
+constexpr
+typename CumulativeHistogram<T>::size_type
+CumulativeHistogram<T>::size() const noexcept {
   return num_elements_;
 }
 
 template<class T>
-constexpr std::size_t CumulativeHistogram<T>::capacity() const noexcept {
+constexpr
+typename CumulativeHistogram<T>::size_type
+CumulativeHistogram<T>::capacity() const noexcept {
   return capacity_;
 }
 
 template<class T>
-void CumulativeHistogram<T>::reserve(std::size_t num_elements) {
+void CumulativeHistogram<T>::reserve(size_type num_elements) {
   if (num_elements <= capacity()) {
     return;
   }
   // Construct new data.
-  const std::size_t new_data_size = num_elements + 1 + Detail::countNodesInTree(num_elements);
+  const size_type new_data_size = num_elements + 1 + Detail::countNodesInTree(num_elements);
   std::vector<T> new_data;
   new_data.reserve(new_data_size);
   new_data.insert(new_data.end(), std::make_move_iterator(data_.begin()),
@@ -542,7 +560,7 @@ void CumulativeHistogram<T>::push_back() {
   const bool was_empty = empty();
   // Double the capacity if needed.
   if (num_elements_ + 1 > capacity_) {
-    const std::size_t capacity_new = capacity_ == 0 ? 1 : (capacity_ * 2);
+    const size_type capacity_new = capacity_ == 0 ? 1 : (capacity_ * 2);
     reserve(capacity_new);
   }
   // TODO: this won't work if pop_back() does't clean up after itself. In that
@@ -570,12 +588,12 @@ void CumulativeHistogram<T>::pop_back() {
   const T diff = static_cast<T>(T{} - data_[num_elements_ - 1]);
   increment(num_elements_ - 1, diff);
   // The number of elements that the current tree represents.
-  const std::size_t capacity_current = capacityCurrent();
+  const size_type capacity_current = capacityCurrent();
   // The number of nodes in the current tree.
-  const std::size_t nodes_current = Detail::countNodesInTree(capacity_current);
+  const size_type nodes_current = Detail::countNodesInTree(capacity_current);
   --num_elements_;
   if (nodes_current > 0) {
-    const std::size_t num_elements_in_left_subtree = (capacity_current + 1) / 2;
+    const size_type num_elements_in_left_subtree = (capacity_current + 1) / 2;
     // If all "real" elements are now in the left subtree, declare the left subtree as the new tree.
     if (num_elements_ <= num_elements_in_left_subtree) {
       ++root_idx_;
@@ -584,7 +602,7 @@ void CumulativeHistogram<T>::pop_back() {
 }
 
 template<class T>
-void CumulativeHistogram<T>::resize(std::size_t num_elements) {
+void CumulativeHistogram<T>::resize(size_type num_elements) {
   // Do nothing if N == N'
   if (num_elements_ == num_elements) {
     return;
@@ -592,8 +610,8 @@ void CumulativeHistogram<T>::resize(std::size_t num_elements) {
   // Remove the last N-N' elements if N > N'.
   if (num_elements_ > num_elements) {
     // TODO: replace with a decent implementation - this one is fucking terrible.
-    const std::size_t elements_to_remove = num_elements_ - num_elements;
-    for (std::size_t i = 0; i < elements_to_remove; ++i) {
+    const size_type elements_to_remove = num_elements_ - num_elements;
+    for (size_type i = 0; i < elements_to_remove; ++i) {
       pop_back();
     }
     return;
@@ -617,7 +635,7 @@ void CumulativeHistogram<T>::resize(std::size_t num_elements) {
 
     // Allocate new data.
     std::vector<T> new_data;
-    const std::size_t new_data_size = num_elements + 1 + Detail::countNodesInTree(num_elements);
+    const size_type new_data_size = num_elements + 1 + Detail::countNodesInTree(num_elements);
     new_data.reserve(new_data_size);
     // Copy current elements.
     new_data.insert(new_data.end(), data_.begin(), data_.begin() + num_elements_);
@@ -640,7 +658,8 @@ constexpr std::span<const T> CumulativeHistogram<T>::elements() const noexcept {
 }
 
 template<class T>
-const T& CumulativeHistogram<T>::element(std::size_t k) const {
+typename CumulativeHistogram<T>::const_reference
+CumulativeHistogram<T>::element(size_type k) const {
   if (k >= num_elements_) {
     throw std::out_of_range("CumulativeHistogram::element(): k is out of range.");
   }
@@ -648,7 +667,7 @@ const T& CumulativeHistogram<T>::element(std::size_t k) const {
 }
 
 template<class T>
-void CumulativeHistogram<T>::increment(std::size_t k, const T& value) {
+void CumulativeHistogram<T>::increment(size_type k, const T& value) {
   if (k >= num_elements_) {
     throw std::out_of_range("CumulativeHistogram::increment(): k is out of range.");
   }
@@ -672,7 +691,7 @@ void CumulativeHistogram<T>::increment(std::size_t k, const T& value) {
 }
 
 template<class T>
-T CumulativeHistogram<T>::partialSum(std::size_t k) const {
+T CumulativeHistogram<T>::partialSum(size_type k) const {
   if (k >= num_elements_) {
     throw std::out_of_range("CumulativeHistogram::partialSum(): k is out of range.");
   }
