@@ -8,15 +8,15 @@ namespace CumulativeHistogram_NS {
 namespace {
 
 template<class T>
-testing::AssertionResult CheckPartialSums(const CumulativeHistogram<T>& histogram) {
+testing::AssertionResult CheckPrefixSums(const CumulativeHistogram<T>& histogram) {
   const std::span<const T> elements = histogram.elements();
   T expected {};
   for (std::size_t i = 0; i < elements.size(); ++i) {
     expected += elements[i];
-    const T actual = histogram.partialSum(i);
+    const T actual = histogram.prefixSum(i);
     if (actual != expected) {
       return testing::AssertionFailure() <<
-        "Expected partialSum(" << i << ") to return " << expected << "; got " << actual;
+        "Expected prefixSum(" << i << ") to return " << expected << "; got " << actual;
     }
   }
   return testing::AssertionSuccess();
@@ -26,21 +26,21 @@ template<class T>
 testing::AssertionResult CheckLowerBound(const CumulativeHistogram<T>& histogram, const T& value) {
   // Find the lower bound safely in O(N).
   auto iter_expected = histogram.begin();
-  T partial_sum {};
+  T prefix_sum {};
   while (iter_expected != histogram.end()) {
-    partial_sum += *iter_expected;
-    if (!(partial_sum < value)) {
+    prefix_sum += *iter_expected;
+    if (!(prefix_sum < value)) {
       break;
     }
     ++iter_expected;
   }
-  const T partial_sum_expected = (iter_expected == histogram.end()) ? T{} : partial_sum;
+  const T prefix_sum_expected = (iter_expected == histogram.end()) ? T{} : prefix_sum;
   // Check that CumulativeHistogram::lowerBound() returns the same result.
-  auto [iter_actual, partial_sum_actual] = histogram.lowerBound(value);
-  if ((iter_expected != iter_actual) || (partial_sum_expected != partial_sum_actual)) {
+  auto [iter_actual, prefix_sum_actual] = histogram.lowerBound(value);
+  if ((iter_expected != iter_actual) || (prefix_sum_expected != prefix_sum_actual)) {
     return testing::AssertionFailure() << "Expected lowerBound(" << value << ") to return {"
-      << iter_expected << ", " << partial_sum_expected << "}; got {"
-      << iter_actual << ", " << partial_sum_actual << "}.";
+      << iter_expected << ", " << prefix_sum_expected << "}; got {"
+      << iter_actual << ", " << prefix_sum_actual << "}.";
   }
   return testing::AssertionSuccess();
 }
@@ -49,21 +49,21 @@ template<class T>
 testing::AssertionResult CheckUpperBound(const CumulativeHistogram<T>& histogram, const T& value) {
   // Find the upper bound safely in O(N).
   auto iter_expected = histogram.begin();
-  T partial_sum {};
+  T prefix_sum {};
   while (iter_expected != histogram.end()) {
-    partial_sum += *iter_expected;
-    if (value < partial_sum) {
+    prefix_sum += *iter_expected;
+    if (value < prefix_sum) {
       break;
     }
     ++iter_expected;
   }
-  const T partial_sum_expected = (iter_expected == histogram.end()) ? T{} : partial_sum;
+  const T prefix_sum_expected = (iter_expected == histogram.end()) ? T{} : prefix_sum;
   // Check that CumulativeHistogram::upperBound() returns the same result.
-  auto [iter_actual, partial_sum_actual] = histogram.upperBound(value);
-  if ((iter_expected != iter_actual) || (partial_sum_expected != partial_sum_actual)) {
+  auto [iter_actual, prefix_sum_actual] = histogram.upperBound(value);
+  if ((iter_expected != iter_actual) || (prefix_sum_expected != prefix_sum_actual)) {
     return testing::AssertionFailure() << "Expected upperBound(" << value << ") to return {"
-      << iter_expected << ", " << partial_sum_expected << "}; got {"
-      << iter_actual << ", " << partial_sum_actual << "}.";
+      << iter_expected << ", " << prefix_sum_expected << "}; got {"
+      << iter_actual << ", " << prefix_sum_actual << "}.";
   }
   return testing::AssertionSuccess();
 }
@@ -96,10 +96,7 @@ TEST(CumulativeHistogram, ConstructFromVector) {
   CumulativeHistogram<int> histogram{ std::vector<int>{elements} };
   EXPECT_EQ(histogram.size(), elements.size());
   EXPECT_EQ(histogram.totalSum(), std::accumulate(elements.begin(), elements.end(), 0));
-  for (std::size_t i = 0; i < elements.size(); ++i) {
-    const int partial_sum = std::accumulate(elements.begin(), elements.begin() + i + 1, 0);
-    EXPECT_EQ(histogram.partialSum(i), partial_sum);
-  }
+  EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
 TEST(CumulativeHistogram, ConstructFromMultiPassRange) {
@@ -107,7 +104,7 @@ TEST(CumulativeHistogram, ConstructFromMultiPassRange) {
   CumulativeHistogram<int> histogram{elements.begin(), elements.end()};
   EXPECT_EQ(histogram.size(), elements.size());
   EXPECT_EQ(histogram.totalSum(), std::accumulate(elements.begin(), elements.end(), 0));
-  EXPECT_TRUE(CheckPartialSums(histogram));
+  EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
 TEST(CumulativeHistogram, ConstructFromSinglePassRange) {
@@ -120,7 +117,7 @@ TEST(CumulativeHistogram, ConstructFromSinglePassRange) {
   EXPECT_EQ(histogram.element(3), 4);
   EXPECT_EQ(histogram.element(4), 5);
   EXPECT_EQ(histogram.totalSum(), 15);
-  EXPECT_TRUE(CheckPartialSums(histogram));
+  EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
 TEST(CumulativeHistogram, Iterators) {
@@ -166,7 +163,7 @@ TEST(CumulativeHistogram, Reserve) {
   // Total sum must remain the same.
   EXPECT_EQ(histogram.totalSum(), std::accumulate(kElements.begin(), kElements.end(), 0u));
   // Validate prefix sums.
-  EXPECT_TRUE(CheckPartialSums(histogram));
+  EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
 TEST(CumulativeHistogram, PushBackZeroInitialized) {
@@ -175,22 +172,22 @@ TEST(CumulativeHistogram, PushBackZeroInitialized) {
   EXPECT_EQ(histogram.size(), 1);
   EXPECT_EQ(histogram.element(0), 0);
   EXPECT_EQ(histogram.totalSum(), 0);
-  EXPECT_TRUE(CheckPartialSums(histogram));
+  EXPECT_TRUE(CheckPrefixSums(histogram));
   histogram.increment(0, 42);
   EXPECT_EQ(histogram.element(0), 42);
   EXPECT_EQ(histogram.totalSum(), 42);
-  EXPECT_TRUE(CheckPartialSums(histogram));
+  EXPECT_TRUE(CheckPrefixSums(histogram));
   histogram.push_back();
   EXPECT_EQ(histogram.size(), 2);
   EXPECT_EQ(histogram.element(0), 42);
   EXPECT_EQ(histogram.element(1), 0);
   EXPECT_EQ(histogram.totalSum(), 42);
-  EXPECT_TRUE(CheckPartialSums(histogram));
+  EXPECT_TRUE(CheckPrefixSums(histogram));
   histogram.increment(1, 5);
   EXPECT_EQ(histogram.element(0), 42);
   EXPECT_EQ(histogram.element(1), 5);
   EXPECT_EQ(histogram.totalSum(), 47);
-  EXPECT_TRUE(CheckPartialSums(histogram));
+  EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
 TEST(CumulativeHistogram, PopBack) {
@@ -211,7 +208,7 @@ TEST(CumulativeHistogram, PopBack) {
       EXPECT_EQ(histogram.element(i), kElements[i]);
     }
     // Check prefix sums for indices [0; num_elements)
-    EXPECT_TRUE(CheckPartialSums(histogram));
+    EXPECT_TRUE(CheckPrefixSums(histogram));
   } while (num_elements > 0);
   EXPECT_TRUE(histogram.empty());
   EXPECT_EQ(histogram.size(), 0);
@@ -234,7 +231,7 @@ TEST(CumulativeHistogram, ResizeSameSize) {
     EXPECT_EQ(histogram.element(i), kElements[i]);
   }
   // Check prefix sums.
-  EXPECT_TRUE(CheckPartialSums(histogram));
+  EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
 TEST(CumulativeHistogram, ResizeToFewerElements) {
@@ -257,7 +254,7 @@ TEST(CumulativeHistogram, ResizeToFewerElements) {
   // Validate the total sum.
   EXPECT_EQ(histogram.totalSum(), std::accumulate(kElements.begin(), kElements.begin() + kNewSize, 0u));
   // Check prefix sums.
-  EXPECT_TRUE(CheckPartialSums(histogram));
+  EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
 TEST(CumulativeHistogram, ResizeToMoreElementsWithinCapacity) {
@@ -291,7 +288,7 @@ TEST(CumulativeHistogram, ResizeToMoreElementsWithinCapacity) {
   const unsigned int total_sum = std::accumulate(elements_new.begin(), elements_new.end(), 0u);
   EXPECT_EQ(histogram.totalSum(), total_sum);
   // Check prefix sums.
-  EXPECT_TRUE(CheckPartialSums(histogram));
+  EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
 TEST(CumulativeHistogram, ResizeToMoreElementsOutsideCapacity) {
@@ -319,7 +316,7 @@ TEST(CumulativeHistogram, ResizeToMoreElementsOutsideCapacity) {
   const unsigned int total_sum = std::accumulate(kElements.begin(), kElements.end(), 0u);
   EXPECT_EQ(histogram.totalSum(), total_sum);
   // Check prefix sums.
-  EXPECT_TRUE(CheckPartialSums(histogram));
+  EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
 TEST(CumulativeHistogram, TotalSum) {
@@ -350,48 +347,48 @@ TEST(CumulativeHistogram, Increment) {
 
 TEST(CumulativeHistogram, OneElement) {
   CumulativeHistogram<int> histogram(1);
-  EXPECT_EQ(histogram.partialSum(0), 0);
+  EXPECT_EQ(histogram.prefixSum(0), 0);
   histogram.increment(0, 42);
-  EXPECT_EQ(histogram.partialSum(0), 42);
+  EXPECT_EQ(histogram.prefixSum(0), 42);
 }
 
 TEST(CumulativeHistogram, TwoElements) {
   CumulativeHistogram<int> histogram(2);
-  EXPECT_EQ(histogram.partialSum(1), 0);
+  EXPECT_EQ(histogram.prefixSum(1), 0);
   histogram.increment(0, 3);
   histogram.increment(1, 7);
-  EXPECT_EQ(histogram.partialSum(0), 3);
-  EXPECT_EQ(histogram.partialSum(1), 10);
+  EXPECT_EQ(histogram.prefixSum(0), 3);
+  EXPECT_EQ(histogram.prefixSum(1), 10);
 }
 
 TEST(CumulativeHistogram, ThreeElements) {
   CumulativeHistogram<int> histogram(3);
   histogram.increment(0, 3);
   histogram.increment(1, 7);
-  EXPECT_EQ(histogram.partialSum(0), 3);
-  EXPECT_EQ(histogram.partialSum(1), 10);
+  EXPECT_EQ(histogram.prefixSum(0), 3);
+  EXPECT_EQ(histogram.prefixSum(1), 10);
 }
 
-TEST(CumulativeHistogram, PartialSum) {
+TEST(CumulativeHistogram, PrefixSum) {
   static constexpr std::size_t kNumElements = 10;
   CumulativeHistogram<int> histogram(kNumElements);
-  EXPECT_EQ(histogram.partialSum(3), 0);
-  EXPECT_EQ(histogram.partialSum(8), 0);
+  EXPECT_EQ(histogram.prefixSum(3), 0);
+  EXPECT_EQ(histogram.prefixSum(8), 0);
   histogram.increment(0, 3);
-  EXPECT_EQ(histogram.partialSum(3), 3);
-  EXPECT_EQ(histogram.partialSum(8), 3);
+  EXPECT_EQ(histogram.prefixSum(3), 3);
+  EXPECT_EQ(histogram.prefixSum(8), 3);
   histogram.increment(1, 7);
-  EXPECT_EQ(histogram.partialSum(3), 10);
-  EXPECT_EQ(histogram.partialSum(8), 10);
+  EXPECT_EQ(histogram.prefixSum(3), 10);
+  EXPECT_EQ(histogram.prefixSum(8), 10);
   histogram.increment(5, 1);
-  EXPECT_EQ(histogram.partialSum(3), 10);
-  EXPECT_EQ(histogram.partialSum(8), 11);
+  EXPECT_EQ(histogram.prefixSum(3), 10);
+  EXPECT_EQ(histogram.prefixSum(8), 11);
   histogram.increment(9, 10);
-  EXPECT_EQ(histogram.partialSum(3), 10);
-  EXPECT_EQ(histogram.partialSum(8), 11);
+  EXPECT_EQ(histogram.prefixSum(3), 10);
+  EXPECT_EQ(histogram.prefixSum(8), 11);
   histogram.increment(3, 5);
-  EXPECT_EQ(histogram.partialSum(3), 15);
-  EXPECT_EQ(histogram.partialSum(8), 16);
+  EXPECT_EQ(histogram.prefixSum(3), 15);
+  EXPECT_EQ(histogram.prefixSum(8), 16);
 }
 
 TEST(CumulativeHistogram, LowerBound) {

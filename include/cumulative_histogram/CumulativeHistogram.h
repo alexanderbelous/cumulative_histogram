@@ -10,17 +10,17 @@
 
 namespace CumulativeHistogram_NS {
 
-// This class allows to efficiently compute partial sums for a dynamic array of elements
+// This class allows to efficiently compute prefix sums for a dynamic array of elements
 // by offering a compromise between 2 naive solutions:
-// +------------------------------------+-------------------+-------------+-------+
-// | Solution                           | Modify an element | Partial sum | Space |
-// +------------------------------------+-------------------+-------------+-------+
-// | 1. Store the elements in an array  | O(1)              | O(N)        | O(N)  |
-// +------------------------------------+-------------------+-------------+-------+
-// | 2. Store the partial sums in array | O(N)              | O(1)        | O(N)  |
-// +------------------------------------+-------------------+-------------+-------+
-// | 3. CumulativeHistogram             | O(logN)           | O(logN)     | O(N)  |
-// +------------------------------------+-------------------+-------------+-------+
+// +-----------------------------------+-------------------+------------+-------+
+// | Solution                          | Modify an element | Prefix sum | Space |
+// +-----------------------------------+-------------------+------------+-------+
+// | 1. Store the elements in an array | O(1)              | O(N)       | O(N)  |
+// +-----------------------------------+-------------------+------------+-------+
+// | 2. Store the prefix sums in array | O(N)              | O(1)       | O(N)  |
+// +-----------------------------------+-------------------+------------+-------+
+// | 3. CumulativeHistogram            | O(logN)           | O(logN)    | O(N)  |
+// +-----------------------------------+-------------------+------------+-------+
 //
 // Unlike a Fenwick tree, this class allows adding and removing elements.
 // The memory overhead is approximately 50% (i.e. the class stores roughly N/2 extra counters).
@@ -111,7 +111,7 @@ class CumulativeHistogram {
   //   When the rightmost element is removed, only the total sum actually needs to be updated.
   // Yes, other nodes are affected, but the affected nodes will not be accesed anymore
   // (the node is affected if it contains x[i]; if we remove x[i] then no valid call to
-  // partialSum() will actually add values from the nodes that contain x[i]).
+  // prefixSum() will actually add values from the nodes that contain x[i]).
   //   However, this means that these nodes will store garbage data; if we call push_back()
   // afterwards, we'll need to ensure that it zero-initializes these nodes before incrementing
   // them. This can still be done in O(logN) - e.g., push_back() can initialize the
@@ -157,28 +157,28 @@ class CumulativeHistogram {
   // Time complexity: O(log(N)).
   void increment(size_type k, const T& value = 1);
 
-  // Returns the partial sum of the first K elements.
+  // Returns the k-th prefix sum of the stored elements.
   // Throws std::out_of_range if k >= size().
   // Time complexity: O(log(N)).
-  T partialSum(size_type k) const;
+  T prefixSum(size_type k) const;
 
   // Returns the total sum of all elements.
   // Throws std::logic_error if this->empty().
   // Time complexity: O(1).
   constexpr T totalSum() const;
 
-  // Find the first element, for which partialSum() is not less than the specified value.
+  // Find the first element, for which prefixSum() is not less than the specified value.
   // The behavior is undefined if any element is negative or if computing the total sum
   // causes an overflow for T.
-  // \return { begin()+k, partialSum(k) }, where k is the first element for which partialSum(k) >= value,
+  // \return { begin()+k, prefixSum(k) }, where k is the first element for which prefixSum(k) >= value,
   //         or { end(), T{} } if there is no such k.
   // Time complexity: O(log(N)).
   std::pair<const_iterator, T> lowerBound(const T& value) const;
 
-  // Find the first element, for which partialSum() is greater than the specified value.
+  // Find the first element, for which prefixSum() is greater than the specified value.
   // The behavior is undefined if any element is negative or if computing the total sum
   // causes an overflow for T.
-  // \return { begin()+k, partialSum(k) }, where k is the first element for which partialSum(k) > value,
+  // \return { begin()+k, prefixSum(k) }, where k is the first element for which prefixSum(k) > value,
   //         or { end(), T{} } if there is no such k.
   // Time complexity: O(log(N)).
   std::pair<const_iterator, T> upperBound(const T& value) const;
@@ -195,8 +195,8 @@ class CumulativeHistogram {
   constexpr size_type numNodesCurrent() const noexcept;
 
   // Shared implementation for lowerBound() and upperBound().
-  // If Upper == false, finds the first element k for which partialSum(k) >= value,
-  //          otherwise finds the first element k for which partialSum(k) > value.
+  // If Upper == false, finds the first element k for which prefixSum(k) >= value,
+  //          otherwise finds the first element k for which prefixSum(k) > value.
   // In both cases objects of type T are compared only using operator<.
   template<bool Upper>
   std::pair<const_iterator, T> lowerBoundImpl(const T& value) const;
@@ -232,7 +232,7 @@ class CumulativeHistogram {
 // CumulativeHistogram stores auxiliary counters for sums of certain elements.
 // These counters are updated whenever the respective elements are modified -
 // this is why CumulativeHistogram::increment() has O(log(N)) time complexity.
-// However, having these sums precomputed also allows efficient computation of the partial sums.
+// However, having these sums precomputed also allows efficient computation of the prefix sums.
 //
 // These additional counters form an implicit binary tree:
 // * The main tree represents all elements [0; N).
@@ -262,7 +262,7 @@ class CumulativeHistogram {
 // +-------------------+----------+---------+-------+----------+---------+
 // | x0+x1+x2+x3+x4+x5 | x0+x1+x2 | x0+x1   | x3+x4 | x6+x7+x8 | x6 + x7 |
 // +-------------------+----------+---------+-------+----------+---------+
-// Any partial sum can be computed by going from the root of the tree to the leaf:
+// Any prefix sum can be computed by going from the root of the tree to the leaf:
 // +------------------------------------------------------------------------------------------+
 // |  s0  |  s1  |  s2  |  s3   |  s4   |  s5  |  s6   |  s7   |  s8   |  s9      |  s10      |
 // +------------------------------------------------------------------------------------------+
@@ -500,7 +500,7 @@ class CumulativeHistogram<T>::Detail {
       StackVariables& vars = stack.back();
       // vars.tree.empty() is always false.
       // TODO: don't *modify* nodes that represent elements [a; b], where b>elements.size()-1.
-      // Rationale: these nodes will never be accessed during increment() or partialSum().
+      // Rationale: these nodes will never be accessed during increment() or prefixSum().
       if (vars.done) {
         // Add the sum of elements from the left subtree to OUR return value,
         // which already contains the sum of elements from the right subtree.
@@ -842,9 +842,9 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
 }
 
 template<class T>
-T CumulativeHistogram<T>::partialSum(size_type k) const {
+T CumulativeHistogram<T>::prefixSum(size_type k) const {
   if (k >= num_elements_) {
-    throw std::out_of_range("CumulativeHistogram::partialSum(): k is out of range.");
+    throw std::out_of_range("CumulativeHistogram::prefixSum(): k is out of range.");
   }
   // Special case for the total sum.
   if (k == num_elements_ - 1) {
@@ -890,12 +890,12 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value) const {
   using Compare = std::conditional_t<Upper, LessEqual, std::less<T>>;
   const Compare is_less;
 
-  // Check if there is an index k for which partialSum(k) >= value.
+  // Check if there is an index k for which prefixSum(k) >= value.
   if ((num_elements_ == 0) || is_less(data_[root_idx_ - 1], value)) {
     return { end(), T{} };
   }
-  T partial_sum_before_lower {};
-  T partial_sum_upper = data_[root_idx_ - 1];
+  T prefix_sum_before_lower {};
+  T prefix_sum_upper = data_[root_idx_ - 1];
   // Tree representing the elements [k_lower; k_upper] = [0; N-1].
   const std::span<const T> nodes = std::span<const T>{ data_ }.subspan(root_idx_, numNodesCurrent());
   TreeView<false> tree(nodes, 0, capacityCurrent() - 1);
@@ -904,28 +904,28 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value) const {
     // and if you decide not to initialize nodes for non-existent nodes, then accessing tree.root()
     // can be UB. In that case you should just go to the left child unconditionally.
     // The root of the tree stores the sum of all elements [k_lower; middle].
-    // Partial sum for elements [0; middle]
-    T partial_sum_middle = partial_sum_before_lower + tree.root();
-    if (is_less(partial_sum_middle, value)) {
-      // OK, we don't need to check the left tree, because partialSum(i) < value for i in [0; middle].
+    // Sum of elements [0; middle]
+    T prefix_sum_middle = prefix_sum_before_lower + tree.root();
+    if (is_less(prefix_sum_middle, value)) {
+      // OK, we don't need to check the left tree, because prefixSum(i) < value for i in [0; middle].
       // k_lower = middle + 1;
-      partial_sum_before_lower = std::move(partial_sum_middle);
+      prefix_sum_before_lower = std::move(prefix_sum_middle);
       tree = tree.rightChild();
     } else {
-      // No need to check the right tree because partialSum(i) >= value for i in [middle; N).
+      // No need to check the right tree because prefixSum(i) >= value for i in [middle; N).
       // Note that it's still possible that middle is the element we're looking for.
       // k_upper = middle;
-      partial_sum_upper = std::move(partial_sum_middle);
+      prefix_sum_upper = std::move(prefix_sum_middle);
       tree = tree.leftChild();
     }
   }
-  const std::size_t k_lower = tree.elementFirst(); // partialSum(i) < value for all i < k_lower
-  const std::size_t k_upper = tree.elementLast();  // partialSum(k_upper) > value
-  partial_sum_before_lower += data_[k_lower];
-  if (!is_less(partial_sum_before_lower, value)) {
-    return { begin() + k_lower, partial_sum_before_lower };
+  const std::size_t k_lower = tree.elementFirst(); // prefixSum(i) < value for all i < k_lower
+  const std::size_t k_upper = tree.elementLast();  // prefixSum(k_upper) > value
+  prefix_sum_before_lower += data_[k_lower];
+  if (!is_less(prefix_sum_before_lower, value)) {
+    return { begin() + k_lower, prefix_sum_before_lower };
   }
-  return { begin() + k_upper, partial_sum_upper };
+  return { begin() + k_upper, prefix_sum_upper };
 }
 
 template<class T>
