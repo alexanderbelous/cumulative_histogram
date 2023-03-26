@@ -12,15 +12,15 @@ namespace CumulativeHistogram_NS {
 
 // This class allows to efficiently compute prefix sums for a dynamic array of elements
 // by offering a compromise between 2 naive solutions:
-// +-----------------------------------+-------------------+------------+-------+
-// | Solution                          | Modify an element | Prefix sum | Space |
-// +-----------------------------------+-------------------+------------+-------+
-// | 1. Store the elements in an array | O(1)              | O(N)       | O(N)  |
-// +-----------------------------------+-------------------+------------+-------+
-// | 2. Store the prefix sums in array | O(N)              | O(1)       | O(N)  |
-// +-----------------------------------+-------------------+------------+-------+
-// | 3. CumulativeHistogram            | O(logN)           | O(logN)    | O(N)  |
-// +-----------------------------------+-------------------+------------+-------+
+// +----------------------+-----------------+-------------+--------------+-------+
+// | Solution             | updateElement() | prefixSum() | lowerBound() | Space |
+// +----------------------+-----------------+-------------+--------------+-------+
+// | Array of elements    | O(1)            | O(N)        | O(N)         | O(N)  |
+// +----------------------+-----------------+-------------+--------------+-------+
+// | Array of prefix sums | O(N)            | O(1)        | O(logN)      | O(N)  |
+// +----------------------+-----------------+-------------+--------------+-------+
+// | CumulativeHistogram  | O(logN)         | O(logN)     | O(logN)      | O(N)  |
+// +----------------------+-----------------+-------------+--------------+-------+
 //
 // Unlike a Fenwick tree, this class allows adding and removing elements.
 // The memory overhead is approximately 50% (i.e. the class stores roughly N/2 extra counters).
