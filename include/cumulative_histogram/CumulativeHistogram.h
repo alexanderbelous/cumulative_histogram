@@ -227,7 +227,7 @@ class CumulativeHistogram {
   size_type root_idx_ = 1;
 };
 
-// ----==== Implementation ====----
+// ======================================== Implementation ========================================
 
 // CumulativeHistogram stores auxiliary counters for sums of certain elements.
 // These counters are updated whenever the respective elements are modified -
@@ -355,12 +355,12 @@ template<class T>
 class CumulativeHistogram<T>::Detail {
  public:
   // Returns floor(log2(x)).
-  static std::size_t floorLog2(std::size_t value) noexcept {
+  static constexpr std::size_t floorLog2(std::size_t value) noexcept {
     return std::bit_width(value) - 1;
   }
 
   // Returns ceil(log2(x)).
-  static std::size_t ceilLog2(std::size_t value) noexcept {
+  static constexpr std::size_t ceilLog2(std::size_t value) noexcept {
     const bool is_power_of_2 = std::has_single_bit(value);
     const std::size_t floor_log2 = floorLog2(value);
     return is_power_of_2 ? floor_log2 : (floor_log2 + 1);
@@ -492,7 +492,7 @@ class CumulativeHistogram<T>::Detail {
       bool done = false;
     };
     std::vector<StackVariables> stack;
-    // Reserve memory all nodes.
+    // Reserve memory for all nodes.
     stack.reserve(countNodesInTree(elements.size()));
     T total_sum {};
     stack.push_back(StackVariables{ .tree = tree, .sum_dest = &total_sum, .done = false });
@@ -781,9 +781,6 @@ void CumulativeHistogram<T>::resize(size_type num_elements) {
       data_[root_idx_ - 1] = data_[root_idx_];
     }
   } else {
-    // TODO: check if the tree for num_elements has our current tree as a subtree. If it does,
-    // then we can just std::copy() the current tree instead of building a new one.
-
     // Allocate new data.
     std::vector<T> new_data;
     const size_type new_data_size = num_elements + 1 + Detail::countNodesInTree(num_elements);
@@ -792,8 +789,8 @@ void CumulativeHistogram<T>::resize(size_type num_elements) {
     new_data.insert(new_data.end(), data_.begin(), data_.begin() + num_elements_);
     // Append new default-constructed elements and our auxiliary counters.
     new_data.resize(new_data_size);
-    // TODO: don't replace the old data_ with new_data until the new tree is built -
-    // resize() should have a strong exception guarantee.
+    // TODO: check if the tree for num_elements has our current tree as a subtree. If it does,
+    // then we can just std::copy() the current tree instead of building a new one.
     Detail::buildTree(new_data, num_elements, num_elements);
     // Replace old data with new data.
     data_ = std::move(new_data);
