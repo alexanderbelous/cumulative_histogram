@@ -302,6 +302,14 @@ public:
     element_last_(element_last)
   {}
 
+  // Converting constructor for an immutable TreeView from a mutable TreeView.
+  template<class Enable = std::enable_if_t<!Mutable>>
+  constexpr TreeView(const TreeView<!Mutable>& tree) noexcept :
+    nodes_(tree.nodes()),
+    element_first_(tree.elementFirst()),
+    element_last_(tree.elementLast())
+  {}
+
   constexpr std::size_t elementFirst() const noexcept {
     return element_first_;
   }
@@ -312,6 +320,10 @@ public:
 
   constexpr bool empty() const noexcept {
     return nodes_.empty();
+  }
+
+  constexpr std::span<value_type> nodes() const noexcept {
+    return nodes_;
   }
 
   constexpr std::size_t pivot() const noexcept {
@@ -440,7 +452,7 @@ class CumulativeHistogram<T>::Detail {
   // Time complexity: O(num_elements).
   // TODO: consider changing the signature to
   //     void buildTree(std::span<const T> elements, std::span<T> nodes, std::size_t capacity)
-  static void buildTree(std::span<T> data, std::size_t num_elements, std::size_t capacity) noexcept {
+  static void buildTree(std::span<T> data, std::size_t num_elements, std::size_t capacity) {
     if (num_elements == 0) {
       return;
     }
@@ -456,20 +468,90 @@ class CumulativeHistogram<T>::Detail {
   }
 
  private:
-   // TODO: replace recursion with a loop.
-  static T buildTreeImpl(std::span<const T> elements, const TreeView<true>& tree) noexcept {
-    // Every node represents at least 3 elements - we don't store smaller nodes.
-    // Thus, any non-empty tree has elements in both left and right subtrees, even
-    // if these subtrees don't actually have nodes.
+  // This function is intended to be called for empty trees (trees without nodes).
+  // Such trees always represent either 1 or 2 elements, so there's no need for a loop.
+  static constexpr T sumElementsOfEmptyTree(std::span<const T> elements, const TreeView<false>& tree) {
+    const std::size_t first = tree.elementFirst();
+    const std::size_t last = tree.elementLast();
+    if (first == last) {
+      return elements[first];
+    }
+    return elements[first] + elements[last];
+  }
+
+  static T buildTreeImpl(std::span<const T> elements, const TreeView<true>& tree) {
+    // Iterative version
+    /*
+    if (tree.empty())
+    {
+      return sumElementsOfEmptyTree(elements, tree);
+    }
+    struct StackVariables {
+      TreeView<true> tree;
+      T* sum_dest = nullptr;
+      bool done = false;
+    };
+    std::vector<StackVariables> stack;
+    // Reserve memory all nodes.
+    stack.reserve(countNodesInTree(elements.size()));
+    T total_sum {};
+    stack.push_back(StackVariables{ .tree = tree, .sum_dest = &total_sum, .done = false });
+    while (!stack.empty()) {
+      StackVariables& vars = stack.back();
+      // vars.tree.empty() is always false.
+      // TODO: don't *modify* nodes that represent elements [a; b], where b>elements.size()-1.
+      // Rationale: these nodes will never be accessed during increment() or partialSum().
+      if (vars.done) {
+        // Add the sum of elements from the left subtree to OUR return value,
+        // which already contains the sum of elements from the right subtree.
+        *(vars.sum_dest) += vars.tree.root();
+        stack.pop_back();
+      } else {
+        vars.done = true;
+        // Zero-initialize the root.
+        vars.tree.root() = T {};
+        // The sum of elements from the left subtree should be added to the root of the current tree.
+        const TreeView<true> left_child = vars.tree.leftChild();
+        if (left_child.empty()) {
+          vars.tree.root() += sumElementsOfEmptyTree(elements, left_child);
+        } else {
+          // Schedule a call to build the left subtree.
+          stack.push_back(StackVariables{ .tree = left_child, .sum_dest = &vars.tree.root(), .done = false });
+        }
+        // The sum of elements from the right subtree should be added to OUR return value.
+        const TreeView<true> right_child = vars.tree.rightChild();
+        if (right_child.empty()) {
+          *(vars.sum_dest) += sumElementsOfEmptyTree(elements, right_child);
+        } else {
+          // Schedule a call to build the right subtree.
+          stack.push_back(StackVariables{ .tree = right_child, .sum_dest = vars.sum_dest, .done = false });
+        }
+      }
+    }
+    return total_sum;
+    */
+
+    // Tail recursion optimization
+    /*
+    TreeView<true> t = tree;
+    T total_sum {};
+    while (!t.empty()) {
+      const T total_sum_left = buildTreeImpl(elements, t.leftChild());
+      t.root() = total_sum_left;
+      total_sum += total_sum_left;
+      t = t.rightChild();
+    }
+    return total_sum + sumElementsOfEmptyTree(elements, t);
+    */
+
+    // Two recursive calls
+    // Lol, surprisingly, this is the most efficient version.
     if (tree.empty()) {
-      const auto first = elements.begin() + tree.elementFirst();
-      const auto last = elements.begin() + tree.elementLast() + 1;
-      return std::accumulate(first, last, T{});
+      return sumElementsOfEmptyTree(elements, tree);
     }
     const T total_sum_left = buildTreeImpl(elements, tree.leftChild());
-    const T total_sum_right = buildTreeImpl(elements, tree.rightChild());
     tree.root() = total_sum_left;
-    return total_sum_left + total_sum_right;
+    return total_sum_left + buildTreeImpl(elements, tree.rightChild());
   }
 };
 
@@ -818,6 +900,9 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value) const {
   const std::span<const T> nodes = std::span<const T>{ data_ }.subspan(root_idx_, numNodesCurrent());
   TreeView<false> tree(nodes, 0, capacityCurrent() - 1);
   while (!tree.empty()) {
+    // TODO: be careful when checking tree.root() - it's possible that middle >= N,
+    // and if you decide not to initialize nodes for non-existent nodes, then accessing tree.root()
+    // can be UB. In that case you should just go to the left child unconditionally.
     // The root of the tree stores the sum of all elements [k_lower; middle].
     // Partial sum for elements [0; middle]
     T partial_sum_middle = partial_sum_before_lower + tree.root();
