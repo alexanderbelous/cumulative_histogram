@@ -456,12 +456,12 @@ class CumulativeHistogram<T>::Detail {
     if (num_elements == 0) {
       return;
     }
-    const std::span<const T> elements = data.first(num_elements);
     const std::size_t level = findDeepestNodeForElements(num_elements, capacity);
     const std::size_t capacity_at_level = countElementsInLeftmostSubtree(capacity, level);
     const std::size_t root_idx = capacity + 1 + level;
     const std::size_t num_nodes_at_level = countNodesInTree(capacity_at_level);
     const std::span<T> nodes = data.subspan(root_idx, num_nodes_at_level);
+    const std::span<const T> elements = data.first(capacity_at_level);
     TreeView<true> tree(nodes, 0, capacity_at_level - 1);
     data[root_idx - 1] = buildTreeImpl(elements, tree);
     // TODO: zero-initialize reserved elements?
