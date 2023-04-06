@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bit>
-#include <numeric>
+#include <iterator>
 #include <stdexcept>
 #include <span>
 #include <type_traits>
@@ -46,13 +46,19 @@ class CumulativeHistogram {
   // Time complexity: O(N).
   explicit CumulativeHistogram(size_type num_elements);
 
+  // Constructs a cumulative histogram for N elements, initializing them with the specified value.
+  // Time complexity: O(N).
+  explicit CumulativeHistogram(size_type num_elements, const T& value);
+
   // Constructs a cumulative histogram for the specified elements.
   // TODO: remove this contructor if you decide not to store data in std::vector.
   explicit CumulativeHistogram(std::vector<T>&& elements);
 
   // Constructs a cumulative histogram for the specified elements.
+  // This overload only participates in overload resolution if Iter satisfies
+  // std::input_iterator concep, to avoid ambiguity with CumulativeHistogram(std::size_t, T).
   // Time complexity: O(N), where N is the distance between first and last.
-  template<class Iter>
+  template<std::input_iterator Iter>
   CumulativeHistogram(Iter first, Iter last);
 
   // Returns an iterator to the first element.
@@ -585,6 +591,27 @@ CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
 }
 
 template<class T>
+CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements, const T& value):
+  num_elements_(num_elements),
+  capacity_(num_elements),
+  root_idx_(capacity_ + 1)
+{
+  if (num_elements == 0)
+  {
+    return;
+  }
+  const std::size_t total_size = num_elements + 1 + Detail::countNodesInTree(num_elements);
+  data_.reserve(total_size);
+  // Append N copies of value.
+  data_.resize(num_elements, value);
+  // Append zeros.
+  // TODO: buildTree() doesn't actually need nodes to be zero-initialized. Consider
+  //       using a custom allocator.
+  data_.resize(total_size);
+  Detail::buildTree(data_, num_elements_, capacity_);
+}
+
+template<class T>
 CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
   data_(std::move(elements)),
   num_elements_(data_.size()),
@@ -607,7 +634,7 @@ CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
 }
 
 template<class T>
-template<class Iter>
+template<std::input_iterator Iter>
 CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last)
 {
   using iterator_categoty = typename std::iterator_traits<Iter>::iterator_category;

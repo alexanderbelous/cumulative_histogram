@@ -1,6 +1,7 @@
 #include <cumulative_histogram/CumulativeHistogram.h>
 
 #include <array>
+#include <numeric>
 #include <sstream>
 #include <gtest/gtest.h>
 
@@ -89,6 +90,18 @@ TEST(CumulativeHistogram, ZeroInitialization) {
   for (std::size_t i = 0; i < kNumElements; ++i) {
     EXPECT_EQ(histogram.element(i), 0);
   }
+}
+
+TEST(CumulativeHistogram, ConstructFromSizeAndValue) {
+  constexpr std::size_t kNumElements = 5;
+  constexpr int kValue = 1;
+  CumulativeHistogram<int> histogram(kNumElements, kValue);
+  EXPECT_EQ(histogram.size(), kNumElements);
+  for (std::size_t i = 0; i < kNumElements; ++i) {
+    EXPECT_EQ(histogram.element(i), kValue);
+  }
+  EXPECT_EQ(histogram.totalSum(), kNumElements * kValue);
+  EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
 TEST(CumulativeHistogram, ConstructFromVector) {
