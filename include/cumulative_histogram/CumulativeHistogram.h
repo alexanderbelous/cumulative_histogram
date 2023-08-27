@@ -191,8 +191,9 @@ class CumulativeHistogram {
   std::pair<const_iterator, T> upperBound(const T& value) const;
 
  private:
-  // Implementation details.
-  class Detail;
+  // Recomputes the index of the root node.
+  // Time complexity: O(1).
+  constexpr size_type recomputeRootIndex() const noexcept;
 
   // Returns the maximum number of elements that can represented by the current tree.
   //   num_elements <= capacityCurrent() <= capacity_
@@ -211,6 +212,25 @@ class CumulativeHistogram {
   template<bool Mutable>
   class TreeView;
 
+  // Builds the tree for the given elements.
+  // Expects that:
+  // 1) 0 <= num_elements <= capacity
+  // 2) data.size() == capacity + 1 + countNodesInTree(capacity)
+  // Time complexity: O(num_elements).
+  // TODO: consider changing the signature to
+  //     void buildTree(std::span<const T> elements, std::span<T> nodes, std::size_t capacity)
+  static void buildTree(std::span<T> data, std::size_t num_elements, std::size_t capacity);
+
+  // Initializes the nodes of the specified TreeView according to the values of the given elements.
+  // \param elements - values of elements for which we want to track prefix sums.
+  // \param tree - TreeView for some or all elements from `elements`.
+  // \returns the total sum of elements represented by `tree`.
+  static T buildTreeImpl(std::span<const T> elements, const TreeView<true>& tree);
+
+  // This function is intended to be called for empty trees (trees without nodes).
+  // Such trees always represent either 1 or 2 elements, so there's no need for a loop.
+  static constexpr T sumElementsOfEmptyTree(std::span<const T> elements, const TreeView<false>& tree);
+
   // Internal data.
   // TODO: consider not using std::vector.
   // Rationale: if the histogram is at full capacity and we want to add more element(s),
@@ -225,12 +245,11 @@ class CumulativeHistogram {
   // Current capacity Nmax.
   size_type capacity_ = 0;
   // Index of the root node.
-  // * This is always equal to
-  //   capacity_ + 1 + Detail::findDeepestNodeForElements(num_elements_, capacity_)
+  // * This is always equal to recomputeRootIndex().
   // * data_[root_idx_] may be out of range if the tree has 0 nodes.
   // * data_[root_idx_-1] stores the total sum of elements [0; num_elements_) unless
   //   the histogram is empty.
-  // TODO: consider removing and calling Detail::findDeepestNodeForElements() when needed.
+  // TODO: consider removing and calling recomputeRootIndex() when needed.
   size_type root_idx_ = 1;
 };
 
@@ -358,16 +377,17 @@ private:
   std::size_t element_last_;
 };
 
-template<class T>
-class CumulativeHistogram<T>::Detail {
- public:
+namespace Detail_NS {
+
   // Returns floor(log2(x)).
-  static constexpr std::size_t floorLog2(std::size_t value) noexcept {
+  // Note that log2(0) is undefined; floorLog2(0) returns 0.
+  constexpr std::size_t floorLog2(std::size_t value) noexcept {
     return std::bit_width(value) - 1;
   }
 
   // Returns ceil(log2(x)).
-  static constexpr std::size_t ceilLog2(std::size_t value) noexcept {
+  // Note that log2(0) is undefined; ceilLog2(0) returns 0.
+  constexpr std::size_t ceilLog2(std::size_t value) noexcept {
     const bool is_power_of_2 = std::has_single_bit(value);
     const std::size_t floor_log2 = floorLog2(value);
     return is_power_of_2 ? floor_log2 : (floor_log2 + 1);
@@ -375,7 +395,8 @@ class CumulativeHistogram<T>::Detail {
 
   // Returns the total number of nodes in the auxiliary tree for
   // CumulativeHistogram with the specified number of elements.
-  static constexpr std::size_t countNodesInTree(std::size_t num_elements) noexcept {
+  // \param num_elements - the total number of elements represented by the tree.
+  constexpr std::size_t countNodesInTree(std::size_t num_elements) noexcept {
     // This number can be computed via a recurrent relation:
     //   f(0) = 0
     //   f(1) = 0
@@ -398,7 +419,10 @@ class CumulativeHistogram<T>::Detail {
 
   // Returns the number of elements represented by the leftmost subtree with root at the specified level.
   // \param num_elements - the total number of elements represented by the tree.
-  static constexpr std::size_t countElementsInLeftmostSubtree(std::size_t num_elements, std::size_t level) noexcept {
+  // \param level - depth of the tree for which to count the number of elements. If level == 0, the
+  //                function returns `num_elements`.
+  // Time complexity: O(1).
+  constexpr std::size_t countElementsInLeftmostSubtree(std::size_t num_elements, std::size_t level) noexcept {
     // f(0) = N
     // f(1) = ceil(f(0)/2) = (N+1)/2
     // f(2) = ceil(f(1)/2) = ((N+1)/2 + 1)/2 = (N+3)/4 = ceil(N/4)
@@ -412,8 +436,8 @@ class CumulativeHistogram<T>::Detail {
   // Expects that num_elements <= capacity.
   // The depth of the root is 0.
   // Time complexity: O(1).
-  static constexpr std::size_t findDeepestNodeForElements(std::size_t num_elements,
-                                                          std::size_t capacity) noexcept {
+  constexpr std::size_t findDeepestNodeForElements(std::size_t num_elements,
+                                                   std::size_t capacity) noexcept {
     // Let's assume that we have an optimal tree representing Nmax elements.
     // Its left subtree represents ceil(Nmax/2) elements.
     // The left subtree of the above-mentioned subtree represents ceil(ceil(Nmax/2)/2) = ceil(Nmax/4) elements.
@@ -431,8 +455,6 @@ class CumulativeHistogram<T>::Detail {
     // <=>
     //    The greatest such k is ceil(log2(Nmax/(N-1)))-1
     //
-    // Note that ceil(log2(x)) = ceil(log2(ceil(x)).
-    //
     // Edge cases:
     // * Nmax=0 is an edge case because log2(0) is undefined. In our case it means that
     //   the capacity of CumulativeHistogram is 0, so we return 0.
@@ -449,120 +471,122 @@ class CumulativeHistogram<T>::Detail {
     //   same as calling computeRootIdxFast(2, Nmax).
     if (capacity < 2) return 0;
     if (num_elements < 2) num_elements = 2;
-
+    // Note that ceil(log2(x)) = ceil(log2(ceil(x)).
     const std::size_t ratio = (capacity + num_elements - 2) / (num_elements - 1);  // ceil(Nmax/(N-1))
     return ceilLog2(ratio) - 1;
   }
 
-  // Build the tree for the given elements.
-  // Expects that:
-  // 1) 0 <= num_elements <= capacity
-  // 2) data.size() == capacity + 1 + countNodesInTree(capacity)
-  // Time complexity: O(num_elements).
-  // TODO: consider changing the signature to
-  //     void buildTree(std::span<const T> elements, std::span<T> nodes, std::size_t capacity)
-  static void buildTree(std::span<T> data, std::size_t num_elements, std::size_t capacity) {
-    if (num_elements == 0) {
-      return;
-    }
-    const std::size_t level = findDeepestNodeForElements(num_elements, capacity);
-    const std::size_t capacity_at_level = countElementsInLeftmostSubtree(capacity, level);
-    const std::size_t root_idx = capacity + 1 + level;
-    const std::size_t num_nodes_at_level = countNodesInTree(capacity_at_level);
-    const std::span<T> nodes = data.subspan(root_idx, num_nodes_at_level);
-    const std::span<const T> elements = data.first(capacity_at_level);
-    TreeView<true> tree(nodes, 0, capacity_at_level - 1);
-    data[root_idx - 1] = buildTreeImpl(elements, tree);
-    // TODO: zero-initialize reserved elements?
-  }
+}  // namespace Detail_NS
 
- private:
-  // This function is intended to be called for empty trees (trees without nodes).
-  // Such trees always represent either 1 or 2 elements, so there's no need for a loop.
-  static constexpr T sumElementsOfEmptyTree(std::span<const T> elements, const TreeView<false>& tree) {
-    const std::size_t first = tree.elementFirst();
-    const std::size_t last = tree.elementLast();
-    if (first == last) {
-      return elements[first];
-    }
-    return elements[first] + elements[last];
+template<class T>
+void CumulativeHistogram<T>::buildTree(std::span<T> data, std::size_t num_elements, std::size_t capacity) {
+  if (num_elements == 0) {
+    return;
   }
+  const std::size_t level = Detail_NS::findDeepestNodeForElements(num_elements, capacity);
+  const std::size_t capacity_at_level = Detail_NS::countElementsInLeftmostSubtree(capacity, level);
+  const std::size_t root_idx = capacity + 1 + level;
+  const std::size_t num_nodes_at_level = Detail_NS::countNodesInTree(capacity_at_level);
+  const std::span<T> nodes = data.subspan(root_idx, num_nodes_at_level);
+  const std::span<const T> elements = data.first(capacity_at_level);
+  TreeView<true> tree(nodes, 0, capacity_at_level - 1);
+  data[root_idx - 1] = buildTreeImpl(elements, tree);
+  // TODO: zero-initialize reserved elements?
+}
 
-  static T buildTreeImpl(std::span<const T> elements, const TreeView<true>& tree) {
-    // Iterative version
-    /*
-    if (tree.empty())
-    {
-      return sumElementsOfEmptyTree(elements, tree);
-    }
-    struct StackVariables {
-      TreeView<true> tree;
-      T* sum_dest = nullptr;
-      bool done = false;
-    };
-    std::vector<StackVariables> stack;
-    // Reserve memory for all nodes.
-    stack.reserve(countNodesInTree(elements.size()));
-    T total_sum {};
-    stack.push_back(StackVariables{ .tree = tree, .sum_dest = &total_sum, .done = false });
-    while (!stack.empty()) {
-      StackVariables& vars = stack.back();
-      // vars.tree.empty() is always false.
-      // TODO: don't *modify* nodes that represent elements [a; b], where b>elements.size()-1.
-      // Rationale: these nodes will never be accessed during increment() or prefixSum().
-      if (vars.done) {
-        // Add the sum of elements from the left subtree to OUR return value,
-        // which already contains the sum of elements from the right subtree.
-        *(vars.sum_dest) += vars.tree.root();
-        stack.pop_back();
+template<class T>
+constexpr T CumulativeHistogram<T>::sumElementsOfEmptyTree(std::span<const T> elements,
+                                                           const TreeView<false>& tree) {
+  const std::size_t first = tree.elementFirst();
+  const std::size_t last = tree.elementLast();
+  if (first == last) {
+    return elements[first];
+  }
+  return elements[first] + elements[last];
+}
+
+template<class T>
+T CumulativeHistogram<T>::buildTreeImpl(std::span<const T> elements, const TreeView<true>& tree) {
+  // Iterative version
+  /*
+  if (tree.empty())
+  {
+    return sumElementsOfEmptyTree(elements, tree);
+  }
+  struct StackVariables {
+    TreeView<true> tree;
+    T* sum_dest = nullptr;
+    bool done = false;
+  };
+  std::vector<StackVariables> stack;
+  // Reserve memory for all nodes.
+  stack.reserve(countNodesInTree(elements.size()));
+  T total_sum {};
+  stack.push_back(StackVariables{ .tree = tree, .sum_dest = &total_sum, .done = false });
+  while (!stack.empty()) {
+    StackVariables& vars = stack.back();
+    // vars.tree.empty() is always false.
+    // TODO: don't *modify* nodes that represent elements [a; b], where b>elements.size()-1.
+    // Rationale: these nodes will never be accessed during increment() or prefixSum().
+    if (vars.done) {
+      // Add the sum of elements from the left subtree to OUR return value,
+      // which already contains the sum of elements from the right subtree.
+      *(vars.sum_dest) += vars.tree.root();
+      stack.pop_back();
+    } else {
+      vars.done = true;
+      // Zero-initialize the root.
+      vars.tree.root() = T {};
+      // The sum of elements from the left subtree should be added to the root of the current tree.
+      const TreeView<true> left_child = vars.tree.leftChild();
+      if (left_child.empty()) {
+        vars.tree.root() += sumElementsOfEmptyTree(elements, left_child);
       } else {
-        vars.done = true;
-        // Zero-initialize the root.
-        vars.tree.root() = T {};
-        // The sum of elements from the left subtree should be added to the root of the current tree.
-        const TreeView<true> left_child = vars.tree.leftChild();
-        if (left_child.empty()) {
-          vars.tree.root() += sumElementsOfEmptyTree(elements, left_child);
-        } else {
-          // Schedule a call to build the left subtree.
-          stack.push_back(StackVariables{ .tree = left_child, .sum_dest = &vars.tree.root(), .done = false });
-        }
-        // The sum of elements from the right subtree should be added to OUR return value.
-        const TreeView<true> right_child = vars.tree.rightChild();
-        if (right_child.empty()) {
-          *(vars.sum_dest) += sumElementsOfEmptyTree(elements, right_child);
-        } else {
-          // Schedule a call to build the right subtree.
-          stack.push_back(StackVariables{ .tree = right_child, .sum_dest = vars.sum_dest, .done = false });
-        }
+        // Schedule a call to build the left subtree.
+        stack.push_back(StackVariables{ .tree = left_child, .sum_dest = &vars.tree.root(), .done = false });
+      }
+      // The sum of elements from the right subtree should be added to OUR return value.
+      const TreeView<true> right_child = vars.tree.rightChild();
+      if (right_child.empty()) {
+        *(vars.sum_dest) += sumElementsOfEmptyTree(elements, right_child);
+      } else {
+        // Schedule a call to build the right subtree.
+        stack.push_back(StackVariables{ .tree = right_child, .sum_dest = vars.sum_dest, .done = false });
       }
     }
-    return total_sum;
-    */
-
-    // Tail recursion optimization
-    /*
-    TreeView<true> t = tree;
-    T total_sum {};
-    while (!t.empty()) {
-      const T total_sum_left = buildTreeImpl(elements, t.leftChild());
-      t.root() = total_sum_left;
-      total_sum += total_sum_left;
-      t = t.rightChild();
-    }
-    return total_sum + sumElementsOfEmptyTree(elements, t);
-    */
-
-    // Two recursive calls
-    // Lol, surprisingly, this is the most efficient version.
-    if (tree.empty()) {
-      return sumElementsOfEmptyTree(elements, tree);
-    }
-    const T total_sum_left = buildTreeImpl(elements, tree.leftChild());
-    tree.root() = total_sum_left;
-    return total_sum_left + buildTreeImpl(elements, tree.rightChild());
   }
-};
+  return total_sum;
+  */
+
+  // Tail recursion optimization
+  /*
+  TreeView<true> t = tree;
+  T total_sum {};
+  while (!t.empty()) {
+    const T total_sum_left = buildTreeImpl(elements, t.leftChild());
+    t.root() = total_sum_left;
+    total_sum += total_sum_left;
+    t = t.rightChild();
+  }
+  return total_sum + sumElementsOfEmptyTree(elements, t);
+  */
+
+  // Two recursive calls
+  // Lol, surprisingly, this is the most efficient version.
+  if (tree.empty()) {
+    return sumElementsOfEmptyTree(elements, tree);
+  }
+  const T total_sum_left = buildTreeImpl(elements, tree.leftChild());
+  tree.root() = total_sum_left;
+  return total_sum_left + buildTreeImpl(elements, tree.rightChild());
+}
+
+template<class T>
+constexpr
+typename CumulativeHistogram<T>::size_type
+CumulativeHistogram<T>::recomputeRootIndex() const noexcept {
+  return capacity_ + 1 + Detail_NS::findDeepestNodeForElements(num_elements_, capacity_);
+}
 
 template<class T>
 constexpr
@@ -573,17 +597,17 @@ CumulativeHistogram<T>::capacityCurrent() const noexcept {
   // should still equal capacity_ + 1 (even though data[root_idx_] is out of range).
   // level will be 0, and this function will simply return capacity_.
   const size_type level = root_idx_ - capacity_ - 1;
-  return Detail::countElementsInLeftmostSubtree(capacity_, level);
+  return Detail_NS::countElementsInLeftmostSubtree(capacity_, level);
 }
 
 template<class T>
 constexpr std::size_t CumulativeHistogram<T>::numNodesCurrent() const noexcept {
-  return Detail::countNodesInTree(capacityCurrent());
+  return Detail_NS::countNodesInTree(capacityCurrent());
 }
 
 template<class T>
 CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
-  data_(num_elements ? num_elements + 1 + Detail::countNodesInTree(num_elements) : 0),
+  data_(num_elements ? num_elements + 1 + Detail_NS::countNodesInTree(num_elements) : 0),
   num_elements_(num_elements),
   capacity_(num_elements),
   root_idx_(capacity_ + 1)
@@ -603,7 +627,7 @@ CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements, const T& val
   {
     return;
   }
-  const std::size_t total_size = num_elements + 1 + Detail::countNodesInTree(num_elements);
+  const std::size_t total_size = num_elements + 1 + Detail_NS::countNodesInTree(num_elements);
   data_.reserve(total_size);
   // Append N copies of value.
   data_.resize(num_elements, value);
@@ -611,7 +635,7 @@ CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements, const T& val
   // TODO: buildTree() doesn't actually need nodes to be zero-initialized. Consider
   //       using a custom allocator.
   data_.resize(total_size);
-  Detail::buildTree(data_, num_elements_, capacity_);
+  buildTree(data_, num_elements_, capacity_);
 }
 
 template<class T>
@@ -632,8 +656,8 @@ CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
   //         find the largest Nmax, such that Nmax + 1 + countNodesInTree(Nmax) <= C.
   //     It can be solved with binary search (the solution is somewhere between [N; C),
   //     but I'd prefer an algorithm with O(1) time complexity.
-  data_.resize(num_elements_ + 1 + Detail::countNodesInTree(num_elements_));
-  Detail::buildTree(data_, num_elements_, capacity_);
+  data_.resize(num_elements_ + 1 + Detail_NS::countNodesInTree(num_elements_));
+  buildTree(data_, num_elements_, capacity_);
 }
 
 template<class T>
@@ -646,10 +670,10 @@ CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last)
     // If Iter does not allow multipass, we need to materialize it first.
     data_.assign(first, last);
     num_elements_ = data_.size();
-    new_data_size = num_elements_ + 1 + Detail::countNodesInTree(num_elements_);
+    new_data_size = num_elements_ + 1 + Detail_NS::countNodesInTree(num_elements_);
   } else {
     num_elements_ = std::distance(first, last);
-    new_data_size = num_elements_ + 1 + Detail::countNodesInTree(num_elements_);
+    new_data_size = num_elements_ + 1 + Detail_NS::countNodesInTree(num_elements_);
     data_.reserve(new_data_size);
     data_.insert(data_.end(), first, last);
   }
@@ -657,7 +681,7 @@ CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last)
   data_.resize(new_data_size);
   capacity_ = num_elements_;
   root_idx_ = capacity_ + 1;
-  Detail::buildTree(data_, num_elements_, capacity_);
+  buildTree(data_, num_elements_, capacity_);
 }
 
 template<class T>
@@ -709,7 +733,7 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
     return;
   }
   // Construct new data.
-  const size_type new_data_size = num_elements + 1 + Detail::countNodesInTree(num_elements);
+  const size_type new_data_size = num_elements + 1 + Detail_NS::countNodesInTree(num_elements);
   std::vector<T> new_data;
   new_data.reserve(new_data_size);
   new_data.insert(new_data.end(), std::make_move_iterator(data_.begin()),
@@ -717,11 +741,11 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
   new_data.resize(new_data_size);
   // TODO: Check the special case when the tree for num_elements has our current tree as a subtree.
   // In that case there's no need to rebuild the tree - we can just copy our current one.
-  Detail::buildTree(new_data, num_elements_, num_elements);
+  buildTree(new_data, num_elements_, num_elements);
   // Replace old data with new data.
   data_ = std::move(new_data);
   capacity_ = num_elements;
-  root_idx_ = capacity_ + 1 + Detail::findDeepestNodeForElements(num_elements_, capacity_);
+  root_idx_ = recomputeRootIndex();
 }
 
 template<class T>
@@ -752,7 +776,7 @@ void CumulativeHistogram<T>::push_back() {
     // This is almost always equivalent to --root_idx_, but not if the histogram had 0
     // nodes before push_back(). Instead of tracking the edge cases, we can just recompute
     // the index of the root.
-    root_idx_ = capacity_ + 1 + Detail::findDeepestNodeForElements(num_elements_, capacity_);
+    root_idx_ = recomputeRootIndex();
     // Initialize the total sum with the sum of elements from the left subtree.
     if (!was_empty) {
       data_[root_idx_ - 1] = data_[root_idx_];
@@ -771,7 +795,7 @@ void CumulativeHistogram<T>::pop_back() {
   // The number of elements that the current tree represents.
   const size_type capacity_current = capacityCurrent();
   // The number of nodes in the current tree.
-  const size_type nodes_current = Detail::countNodesInTree(capacity_current);
+  const size_type nodes_current = Detail_NS::countNodesInTree(capacity_current);
   --num_elements_;
   if (nodes_current > 0) {
     const size_type num_elements_in_left_subtree = (capacity_current + 1) / 2;
@@ -801,32 +825,29 @@ void CumulativeHistogram<T>::resize(size_type num_elements) {
   if (capacity() >= num_elements) {
     // TODO: this won't work if pop_back() does't clean up after itself.
     num_elements_ = num_elements;
-    // TODO: I suppose the new value for root_idx_ could be computed in O(1), but
-    // we need to initialize the new nodes anyway, so the loop cannot be avoided.
-    while (num_elements_ > capacityCurrent()) {
-      // Update the root.
-      // TODO: don't update root_idx_ if there were 0 nodes before this iteration.
-      --root_idx_;
-      // Initialize the total sum with the sum of elements from the left subtree.
-      data_[root_idx_ - 1] = data_[root_idx_];
-    }
+    // Save the old index of the root. Note that if we're here, then
+    //   0 <= old_num_elements < new_num_elements <= capacity_
+    // Therefore, it's guaranteed that data_[old_root_idx - 1] is not out of range.
+    const size_type old_root_idx = root_idx_;
+    // Compute the new index of the root.
+    root_idx_ = recomputeRootIndex();
+    // If the root has changed, then we need to initialize the new nodes [root_idx_ - 1; old_root_idx - 1)
+    // with the total sum.
+    const auto iter_total_sum_new = data_.begin() + root_idx_ - 1;
+    const auto iter_total_sum_old = data_.begin() + old_root_idx - 1;
+    std::fill(iter_total_sum_new, iter_total_sum_old, *iter_total_sum_old);
   } else {
     // Allocate new data.
     std::vector<T> new_data;
-    const size_type new_data_size = num_elements + 1 + Detail::countNodesInTree(num_elements);
+    const size_type new_data_size = num_elements + 1 + Detail_NS::countNodesInTree(num_elements);
     new_data.reserve(new_data_size);
-    // Copy current elements.
-    new_data.insert(new_data.end(), data_.begin(), data_.begin() + num_elements_);
-    // Append new default-constructed elements and our auxiliary counters.
-    new_data.resize(new_data_size);
-    // TODO: check if the tree for num_elements has our current tree as a subtree. If it does,
-    // then we can just std::copy() the current tree instead of building a new one.
-    Detail::buildTree(new_data, num_elements, num_elements);
-    // Replace old data with new data.
-    data_ = std::move(new_data);
-    num_elements_ = num_elements;
-    capacity_ = num_elements;
-    root_idx_ = capacity_ + 1;
+    // Move the current elements.
+    new_data.insert(new_data.end(), std::make_move_iterator(data_.begin()),
+                                    std::make_move_iterator(data_.begin() + num_elements_));
+    // Append new default-constructed elements.
+    new_data.resize(num_elements);
+    // Construct a new CumulativeHistogram.
+    *this = CumulativeHistogram(std::move(new_data));
   }
 }
 
