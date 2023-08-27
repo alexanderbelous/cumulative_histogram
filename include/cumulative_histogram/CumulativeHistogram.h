@@ -40,6 +40,7 @@ class CumulativeHistogram {
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
   // Constructs an empty histogram.
+  // Time complexity: O(1).
   constexpr CumulativeHistogram() noexcept = default;
 
   // Constructs a cumulative histogram for N zero-initialized elements.
@@ -426,9 +427,11 @@ class CumulativeHistogram<T>::Detail {
     // <=>
     //    Nmax/(N-1) > 2^k
     // <=>
-    //    k < log2(Nmax/(N-1)
+    //    k < log2(Nmax/(N-1))
     // <=>
     //    The greatest such k is ceil(log2(Nmax/(N-1)))-1
+    //
+    // Note that ceil(log2(x)) = ceil(log2(ceil(x)).
     //
     // Edge cases:
     // * Nmax=0 is an edge case because log2(0) is undefined. In our case it means that
@@ -624,7 +627,7 @@ CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
   //     so let's not allocate more than necessary.
   //   * If C = N + 1 + countNodesInTree(N), then there's no need to allocate more memory,
   //     but CumulativeHistogram is at its full capacity.
-  //   * If C = N + 1 + countNodesInTree(N), then our capacity_ might be greater than N.
+  //   * If C > N + 1 + countNodesInTree(N), then our capacity_ might be greater than N.
   //     However, this requires solving the optimization problem:
   //         find the largest Nmax, such that Nmax + 1 + countNodesInTree(Nmax) <= C.
   //     It can be solved with binary search (the solution is somewhere between [N; C),
