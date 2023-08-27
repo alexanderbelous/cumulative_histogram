@@ -594,10 +594,9 @@ constexpr
 typename CumulativeHistogram<T>::size_type
 CumulativeHistogram<T>::capacityCurrent() const noexcept {
   // Determine the depth of the current root node in the "full" tree.
-  // Note that there aren't actually any nodes if capacity_ < 3. In that case root_idx_
-  // should still equal capacity_ + 1 (even though data[root_idx_] is out of range).
+  // Note that there aren't actually any nodes if capacity_ < 3. In that case
   // level will be 0, and this function will simply return capacity_.
-  const size_type level = root_idx_ - capacity_ - 1;
+  const size_type level = Detail_NS::findDeepestNodeForElements(num_elements_, capacity_);
   return Detail_NS::countElementsInLeftmostSubtree(capacity_, level);
 }
 
@@ -765,15 +764,16 @@ template<class T>
 void CumulativeHistogram<T>::push_back() {
   const bool was_empty = empty();
   // Double the capacity if needed.
-  if (num_elements_ + 1 > capacity_) {
+  if (num_elements_ == capacity_) {
     const size_type capacity_new = capacity_ == 0 ? 1 : (capacity_ * 2);
     reserve(capacity_new);
   }
   // TODO: this won't work if pop_back() does't clean up after itself. In that
   // case we'll need to initialize the new nodes.
+  const bool should_update_root = (num_elements_ == capacityCurrent());
   ++num_elements_;
-  if (num_elements_ > capacityCurrent()) {
-    // Update the root.
+  // Update the root if needed.
+  if (should_update_root) {
     // This is almost always equivalent to --root_idx_, but not if the histogram had 0
     // nodes before push_back(). Instead of tracking the edge cases, we can just recompute
     // the index of the root.
