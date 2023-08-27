@@ -383,13 +383,13 @@ private:
 namespace Detail_NS {
 
   // Returns floor(log2(x)).
-  // Note that log2(0) is undefined; floorLog2(0) returns 0.
+  // The result is unspecified if value == 0.
   constexpr std::size_t floorLog2(std::size_t value) noexcept {
     return std::bit_width(value) - 1;
   }
 
   // Returns ceil(log2(x)).
-  // Note that log2(0) is undefined; ceilLog2(0) returns 0.
+  // The result is unspecified if value == 0.
   constexpr std::size_t ceilLog2(std::size_t value) noexcept {
     const bool is_power_of_2 = std::has_single_bit(value);
     const std::size_t floor_log2 = floorLog2(value);
@@ -434,10 +434,13 @@ namespace Detail_NS {
     return (num_elements + (static_cast<std::size_t>(1) << level) - 1) >> level;
   }
 
-  // Returns the depth of the deepest node containing the elements [0; num_elements)
-  // in the optimal tree representing the elements [0; capacity).
-  // Expects that num_elements <= capacity.
-  // The depth of the root is 0.
+  // Finds the deepest node containing all of the given elements in the tree with the specified capacity.
+  // \param num_elements - specifies the range [0; num_elements) that must be contained by the node.
+  // \param capacity - the total number of elements that can be represented by the tree.
+  // \return the depth of the deepest node containing the elements [0; num_elements)
+  //         in the optimal tree representing the elements [0; capacity),
+  //         or static_cast<std::size_t>(-1) if capacity < num_elements.
+  //         The depth of the root is 0.
   // Time complexity: O(1).
   constexpr std::size_t findDeepestNodeForElements(std::size_t num_elements,
                                                    std::size_t capacity) noexcept {
@@ -452,11 +455,11 @@ namespace Detail_NS {
     // <=>
     //   Nmax/2^k + 1 > N
     // <=>
-    //    Nmax/(N-1) > 2^k
+    //   Nmax/(N-1) > 2^k
     // <=>
-    //    k < log2(Nmax/(N-1))
+    //   k < log2(Nmax/(N-1))
     // <=>
-    //    The greatest such k is ceil(log2(Nmax/(N-1)))-1
+    //   The greatest such k is ceil(log2(Nmax/(N-1)))-1
     //
     // Edge cases:
     // * Nmax=0 is an edge case because log2(0) is undefined. In our case it means that
