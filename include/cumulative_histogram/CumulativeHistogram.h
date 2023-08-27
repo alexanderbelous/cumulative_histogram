@@ -204,11 +204,13 @@ class CumulativeHistogram {
   constexpr size_type numNodesCurrent() const noexcept;
 
   // Shared implementation for lowerBound() and upperBound().
-  // If Upper == false, finds the first element k for which prefixSum(k) >= value,
-  //          otherwise finds the first element k for which prefixSum(k) > value.
-  // In both cases objects of type T are compared only using operator<.
-  template<bool Upper>
-  std::pair<const_iterator, T> lowerBoundImpl(const T& value) const;
+  // For computing the lower bound, Compare should effectively implement `lhs < rhs`.
+  // For computing the upper bound, Compare should effectively implement `lhs <= rhs`.
+  // \return { begin()+k, prefixSum(k) }, where k is the first element for which !cmp(prefixSum(k), value)
+  //      or { end(), T{} } if there is no such k.
+  // Time complexity: O(log(N)).
+  template<class Compare>
+  std::pair<const_iterator, T> lowerBoundImpl(const T& value, Compare cmp) const;
 
   template<bool Mutable>
   class TreeView;
@@ -933,18 +935,12 @@ constexpr T CumulativeHistogram<T>::totalSum() const {
 }
 
 template<class T>
-template<bool Upper>
+template<class Compare>
 std::pair<typename CumulativeHistogram<T>::const_iterator, T>
-CumulativeHistogram<T>::lowerBoundImpl(const T& value) const {
-  struct LessEqual {
-    bool operator()(const T& lhs, const T& rhs) const { return !(rhs < lhs); }
-  };
-  // Use strict comparison for lowerBound, non-strict comparison for upperBound.
-  using Compare = std::conditional_t<Upper, LessEqual, std::less<T>>;
-  const Compare is_less;
-
-  // Check if there is an index k for which prefixSum(k) >= value.
-  if ((num_elements_ == 0) || is_less(data_[root_idx_ - 1], value)) {
+CumulativeHistogram<T>::lowerBoundImpl(const T& value, Compare cmp) const {
+  // Terminate if there are no elements or if cmp(totalSum(), value) is true -
+  // in these cases there is no such index k that !cmp(prefixSum(k), value).
+  if ((num_elements_ == 0) || cmp(data_[root_idx_ - 1], value)) {
     return { end(), T{} };
   }
   T prefix_sum_before_lower {};
@@ -959,7 +955,7 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value) const {
     // The root of the tree stores the sum of all elements [k_lower; middle].
     // Sum of elements [0; middle]
     T prefix_sum_middle = prefix_sum_before_lower + tree.root();
-    if (is_less(prefix_sum_middle, value)) {
+    if (cmp(prefix_sum_middle, value)) {
       // OK, we don't need to check the left tree, because prefixSum(i) < value for i in [0; middle].
       // k_lower = middle + 1;
       prefix_sum_before_lower = std::move(prefix_sum_middle);
@@ -972,10 +968,10 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value) const {
       tree = tree.leftChild();
     }
   }
-  const std::size_t k_lower = tree.elementFirst(); // prefixSum(i) < value for all i < k_lower
-  const std::size_t k_upper = tree.elementLast();  // prefixSum(k_upper) > value
+  const std::size_t k_lower = tree.elementFirst(); // cmp(prefixSum(i), value) == true for all i < k_lower
+  const std::size_t k_upper = tree.elementLast();  // cmp(prefixSum(k_upper), value) == false
   prefix_sum_before_lower += data_[k_lower];
-  if (!is_less(prefix_sum_before_lower, value)) {
+  if (!cmp(prefix_sum_before_lower, value)) {
     return { begin() + k_lower, prefix_sum_before_lower };
   }
   return { begin() + k_upper, prefix_sum_upper };
@@ -984,13 +980,15 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value) const {
 template<class T>
 std::pair<typename CumulativeHistogram<T>::const_iterator, T>
 CumulativeHistogram<T>::lowerBound(const T& value) const {
-  return lowerBoundImpl<false>(value);
+  return lowerBoundImpl(value, std::less<T>{});
 }
 
 template<class T>
 std::pair<typename CumulativeHistogram<T>::const_iterator, T>
 CumulativeHistogram<T>::upperBound(const T& value) const {
-  return lowerBoundImpl<true>(value);
+  // Effectively implements `lhs <= rhs`, but only requires operator< to be defined for T.
+  auto less_equal = [](const T& lhs, const T& rhs) { return !(rhs < lhs); };
+  return lowerBoundImpl(value, less_equal);
 }
 
 }  // namespace CumulativeHistogram_NS
