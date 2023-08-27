@@ -619,23 +619,20 @@ CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
 
 template<class T>
 CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements, const T& value):
-  num_elements_(num_elements),
-  capacity_(num_elements),
-  root_idx_(capacity_ + 1)
+  // Delegate to the constructor that takes std::vector.
+  CumulativeHistogram(
+    [num_elements, &value]() {
+      std::vector<T> elements;
+      if (num_elements > 0) {
+        const std::size_t total_size = num_elements + 1 + Detail_NS::countNodesInTree(num_elements);
+        elements.reserve(total_size);
+        // Append N copies of value.
+        elements.resize(num_elements, value);
+      }
+      return elements;
+    }()
+  )
 {
-  if (num_elements == 0)
-  {
-    return;
-  }
-  const std::size_t total_size = num_elements + 1 + Detail_NS::countNodesInTree(num_elements);
-  data_.reserve(total_size);
-  // Append N copies of value.
-  data_.resize(num_elements, value);
-  // Append zeros.
-  // TODO: buildTree() doesn't actually need nodes to be zero-initialized. Consider
-  //       using a custom allocator.
-  data_.resize(total_size);
-  buildTree(data_, num_elements_, capacity_);
 }
 
 template<class T>
@@ -645,6 +642,9 @@ CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
   capacity_(num_elements_),
   root_idx_(capacity_ + 1)
 {
+  if (num_elements_ == 0) {
+    return;
+  }
   // TODO: reuse capacity of the input vector.
   // Let N = elements.size(), C = elements.capacity().
   //   * If C < N + 1 + countNodesInTree(N), then we need to allocate memory anyway,
@@ -656,32 +656,36 @@ CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
   //         find the largest Nmax, such that Nmax + 1 + countNodesInTree(Nmax) <= C.
   //     It can be solved with binary search (the solution is somewhere between [N; C),
   //     but I'd prefer an algorithm with O(1) time complexity.
+
+  // TODO: buildTree() doesn't actually need nodes to be zero-initialized. Consider
+  //       using a custom allocator or storing elements separately from counters.
   data_.resize(num_elements_ + 1 + Detail_NS::countNodesInTree(num_elements_));
   buildTree(data_, num_elements_, capacity_);
 }
 
 template<class T>
 template<std::input_iterator Iter>
-CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last)
+CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last):
+  // Delegate to the constructor that takes std::vector.
+  CumulativeHistogram(
+    [first, last]() {
+      using iterator_categoty = typename std::iterator_traits<Iter>::iterator_category;
+      std::vector<T> elements;
+      if (first != last) {
+        if constexpr (std::is_same_v<iterator_categoty, std::input_iterator_tag>) {
+          // If Iter does not allow multipass, we need to materialize the range first.
+          elements.assign(first, last);
+        } else {
+          const size_type num_elements = std::distance(first, last);
+          const size_type new_data_size = num_elements + 1 + Detail_NS::countNodesInTree(num_elements);
+          elements.reserve(new_data_size);
+          elements.insert(elements.end(), first, last);
+        }
+      }
+      return elements;
+    }()
+  )
 {
-  using iterator_categoty = typename std::iterator_traits<Iter>::iterator_category;
-  size_type new_data_size;
-  if constexpr (std::is_same_v<iterator_categoty, std::input_iterator_tag>) {
-    // If Iter does not allow multipass, we need to materialize it first.
-    data_.assign(first, last);
-    num_elements_ = data_.size();
-    new_data_size = num_elements_ + 1 + Detail_NS::countNodesInTree(num_elements_);
-  } else {
-    num_elements_ = std::distance(first, last);
-    new_data_size = num_elements_ + 1 + Detail_NS::countNodesInTree(num_elements_);
-    data_.reserve(new_data_size);
-    data_.insert(data_.end(), first, last);
-  }
-  // Append new default-constructed elements and our auxiliary counters.
-  data_.resize(new_data_size);
-  capacity_ = num_elements_;
-  root_idx_ = capacity_ + 1;
-  buildTree(data_, num_elements_, capacity_);
 }
 
 template<class T>
