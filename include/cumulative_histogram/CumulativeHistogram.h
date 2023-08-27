@@ -94,8 +94,9 @@ class CumulativeHistogram {
   // Erases all elements.
   // The capacity remains unchanged.
   // Time complexity: O(N).
-  // TODO: could be O(1) if we require that T is an arithmetic type. However, that woukd be too restrictive:
-  //       e.g., there's nothing wrong with CumulativeHistogram<std::complex>.
+  // Note: time complexity is linear because we need to call the destructor for each element.
+  // For arithmetic types we could skip that, but T can be a class/struct (e.g., std::complex or some BigInt).
+  // TODO: consider customizing the behavior for trivial types.
   void clear() noexcept;
 
   // Add a zero-initialized element to the end.
