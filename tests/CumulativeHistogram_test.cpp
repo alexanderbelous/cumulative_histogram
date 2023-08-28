@@ -157,6 +157,26 @@ TEST(CumulativeHistogram, ReverseIterators) {
   }
 }
 
+TEST(CumulativeHistogram, Clear) {
+  constexpr std::size_t kNumElements = 5;
+  // Construct a histogram capable of storing 5 elements.
+  CumulativeHistogram<unsigned int> histogram(kNumElements);
+  EXPECT_EQ(histogram.capacity(), kNumElements);
+  EXPECT_EQ(histogram.size(), kNumElements);
+  // Remove all elements.
+  histogram.clear();
+  EXPECT_EQ(histogram.capacity(), kNumElements);
+  EXPECT_EQ(histogram.size(), 0);
+  // Push back 5 new elements {0, 1, 2, 3, 4}.
+  for (std::size_t i = 0; i < kNumElements; ++i) {
+    histogram.push_back();
+    histogram.increment(i, i);
+    EXPECT_EQ(histogram.capacity(), kNumElements);
+    EXPECT_EQ(histogram.size(), i + 1);
+    EXPECT_EQ(histogram.element(i), i);
+  }
+}
+
 TEST(CumulativeHistogram, Reserve) {
   constexpr std::array<unsigned int, 5> kElements = { 1, 2, 3, 4, 5};
   // Construct a histogram capable of storing 5 elements.

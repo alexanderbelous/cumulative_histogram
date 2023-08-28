@@ -759,14 +759,14 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
 
 template<class T>
 void CumulativeHistogram<T>::clear() noexcept {
-  data_.clear();
+  setZero();
   num_elements_ = 0;
   root_idx_ = 1;
 }
 
 template<class T>
 void CumulativeHistogram<T>::setZero() {
-  std::fill(data_, T{});
+  std::fill(data_.begin(), data_.end(), T{});
 }
 
 template<class T>
