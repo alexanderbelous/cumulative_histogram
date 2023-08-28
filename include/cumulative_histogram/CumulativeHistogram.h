@@ -235,13 +235,9 @@ class CumulativeHistogram {
   static constexpr T sumElementsOfEmptyTree(std::span<const T> elements, const TreeView<false>& tree);
 
   // Internal data.
-  // TODO: consider not using std::vector.
-  // Rationale: if the histogram is at full capacity and we want to add more element(s),
-  // we need to allocate more memory. However, we won't just copy current data via a
-  // single memcpy() call: in the new memory there will be a "gap" between data for the
-  // elements and data for the tree.
-  // We can still use std::vector for storage, but we don't need its insert/erase API.
-  // In fact, unique_ptr<T[]> will do fine.
+  // TODO: consider storing elements and counters separately.
+  // Rationale: when calling reserve() we want the time complexity to be O(N) where
+  // N is the current number of elements, not O(Nmax), where Nmax is the new capacity.
   std::vector<T> data_;
   // The number of elements N.
   size_type num_elements_ = 0;
@@ -793,7 +789,6 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
     const T& total_sum = data_[root_idx_old - 1];
     new_data.push_back(total_sum);
     // 3) Just copy the current tree as a subtree of the new one.
-    const size_type root_idx_new = num_elements + 1 + level_for_the_original;
     const size_type num_nodes_old = Detail_NS::countNodesInTree(capacity_current);
     new_data.insert(new_data.end(), std::make_move_iterator(data_.begin() + root_idx_old),
                                     std::make_move_iterator(data_.begin() + root_idx_old + num_nodes_old));
