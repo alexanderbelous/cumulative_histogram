@@ -482,6 +482,31 @@ namespace Detail_NS {
     return ceilLog2(ratio) - 1;
   }
 
+  // Find the depth of the leftmost subtree that represents exactly the specified number of elements.
+  // \param capacity_to_find - capacity of the subtree to find.
+  // \param capacity - capacity of the full tree.
+  // \return depth of the leftmost subtree that represents exactly `capacity_to_find` elements,
+  //         or static_cast<std::size_t>(-1) if there is no such subtree.
+  constexpr std::size_t findLeftmostSubtreeWithExactCapacity(std::size_t capacity_to_find,
+                                                             std::size_t capacity) noexcept {
+    // Edge cases:
+    // 1) A smaller tree cannot contain a larger tree.
+    // 2) Our trees always have capacity >= 2. Trees of capacity == 1 are problematic - we forbid
+    //    nodes with fewer than 2 elements, so a tree representing 1 element cannot be anyone's subtree.
+    if (capacity < capacity_to_find || capacity_to_find < 2) {
+      return static_cast<std::size_t>(-1);
+    }
+    // Find the deepest leftmost node of the new tree that contains at least `capacity_to_find` elements.
+    const std::size_t level = findDeepestNodeForElements(capacity_to_find, capacity);
+    // Get the number of elements that this node contains.
+    const std::size_t num_elements_at_level = countElementsInLeftmostSubtree(capacity, level);
+    // The old tree is a subtree of the new one if and only if the number of elements matches exactly.
+    if (num_elements_at_level == capacity_to_find) {
+      return level;
+    }
+    return static_cast<std::size_t>(-1);
+  }
+
 }  // namespace Detail_NS
 
 template<class T>
@@ -629,7 +654,8 @@ CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements, const T& val
     [num_elements, &value]() {
       std::vector<T> elements;
       if (num_elements > 0) {
-        const std::size_t total_size = num_elements + 1 + Detail_NS::countNodesInTree(num_elements);
+        const std::size_t capacity = std::max(num_elements, static_cast<size_type>(2));
+        const std::size_t total_size = capacity + 1 + Detail_NS::countNodesInTree(capacity);
         elements.reserve(total_size);
         // Append N copies of value.
         elements.resize(num_elements, value);
@@ -644,7 +670,7 @@ template<class T>
 CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
   data_(std::move(elements)),
   num_elements_(data_.size()),
-  capacity_(num_elements_),
+  capacity_((num_elements_ == 0) ? 0 : std::max(num_elements_, static_cast<size_type>(2))),
   root_idx_(capacity_ + 1)
 {
   if (num_elements_ == 0) {
@@ -664,7 +690,7 @@ CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
 
   // TODO: buildTree() doesn't actually need nodes to be zero-initialized. Consider
   //       using a custom allocator or storing elements separately from counters.
-  data_.resize(num_elements_ + 1 + Detail_NS::countNodesInTree(num_elements_));
+  data_.resize(capacity_ + 1 + Detail_NS::countNodesInTree(capacity_));
   buildTree(data_, num_elements_, capacity_);
 }
 
@@ -682,7 +708,8 @@ CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last):
           elements.assign(first, last);
         } else {
           const size_type num_elements = std::distance(first, last);
-          const size_type new_data_size = num_elements + 1 + Detail_NS::countNodesInTree(num_elements);
+          const std::size_t capacity = std::max(num_elements, static_cast<size_type>(2));
+          const size_type new_data_size = capacity + 1 + Detail_NS::countNodesInTree(capacity);
           elements.reserve(new_data_size);
           elements.insert(elements.end(), first, last);
         }
@@ -745,12 +772,35 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
   const size_type new_data_size = num_elements + 1 + Detail_NS::countNodesInTree(num_elements);
   std::vector<T> new_data;
   new_data.reserve(new_data_size);
+  // TODO: if T's move constructor is not noexcept, use the copy constructor instead.
   new_data.insert(new_data.end(), std::make_move_iterator(data_.begin()),
                                   std::make_move_iterator(data_.begin() + num_elements_));
-  new_data.resize(new_data_size);
-  // TODO: Check the special case when the tree for num_elements has our current tree as a subtree.
+
+  // Check the special case when the tree for num_elements has our current tree as a subtree.
   // In that case there's no need to rebuild the tree - we can just copy our current one.
-  buildTree(new_data, num_elements_, num_elements);
+  const size_type capacity_current = capacityCurrent();
+  const std::size_t level_for_the_original =
+    Detail_NS::findLeftmostSubtreeWithExactCapacity(capacity_current, num_elements);
+  if (level_for_the_original == static_cast<std::size_t>(-1)) {
+    // Not a subtree - just zero-initialize the remaining data and rebuild the tree.
+    new_data.resize(new_data_size);
+    buildTree(new_data, num_elements_, num_elements);
+  } else {
+    // 1) Zero-initialize reserved elements and reserved "root" nodes.
+    new_data.resize(num_elements + level_for_the_original);
+    // 2) Append the total sum node.
+    const size_type root_idx_old = recomputeRootIndex();
+    const T& total_sum = data_[root_idx_old - 1];
+    new_data.push_back(total_sum);
+    // 3) Just copy the current tree as a subtree of the new one.
+    const size_type root_idx_new = num_elements + 1 + level_for_the_original;
+    const size_type num_nodes_old = Detail_NS::countNodesInTree(capacity_current);
+    new_data.insert(new_data.end(), std::make_move_iterator(data_.begin() + root_idx_old),
+                                    std::make_move_iterator(data_.begin() + root_idx_old + num_nodes_old));
+    // 4) Zero-initialize the remaining data.
+    new_data.resize(new_data_size);
+  }
+
   // Replace old data with new data.
   data_ = std::move(new_data);
   capacity_ = num_elements;
@@ -774,7 +824,7 @@ void CumulativeHistogram<T>::push_back() {
   const bool was_empty = empty();
   // Double the capacity if needed.
   if (num_elements_ == capacity_) {
-    const size_type capacity_new = capacity_ == 0 ? 1 : (capacity_ * 2);
+    const size_type capacity_new = capacity_ == 0 ? 2 : (capacity_ * 2);
     reserve(capacity_new);
   }
   // TODO: this won't work if pop_back() does't clean up after itself. In that
@@ -832,33 +882,21 @@ void CumulativeHistogram<T>::resize(size_type num_elements) {
     return;
   }
   // Append N'-N elements if N < N'.
-  if (capacity() >= num_elements) {
-    // TODO: this won't work if pop_back() does't clean up after itself.
-    num_elements_ = num_elements;
-    // Save the old index of the root. Note that if we're here, then
-    //   0 <= old_num_elements < new_num_elements <= capacity_
-    // Therefore, it's guaranteed that data_[old_root_idx - 1] is not out of range.
-    const size_type old_root_idx = root_idx_;
-    // Compute the new index of the root.
-    root_idx_ = recomputeRootIndex();
-    // If the root has changed, then we need to initialize the new nodes [root_idx_ - 1; old_root_idx - 1)
-    // with the total sum.
-    const auto iter_total_sum_new = data_.begin() + root_idx_ - 1;
-    const auto iter_total_sum_old = data_.begin() + old_root_idx - 1;
-    std::fill(iter_total_sum_new, iter_total_sum_old, *iter_total_sum_old);
-  } else {
-    // Allocate new data.
-    std::vector<T> new_data;
-    const size_type new_data_size = num_elements + 1 + Detail_NS::countNodesInTree(num_elements);
-    new_data.reserve(new_data_size);
-    // Move the current elements.
-    new_data.insert(new_data.end(), std::make_move_iterator(data_.begin()),
-                                    std::make_move_iterator(data_.begin() + num_elements_));
-    // Append new default-constructed elements.
-    new_data.resize(num_elements);
-    // Construct a new CumulativeHistogram.
-    *this = CumulativeHistogram(std::move(new_data));
-  }
+  // Allocate new data if needed.
+  reserve(num_elements);
+  // TODO: this won't work if pop_back() does't clean up after itself.
+  num_elements_ = num_elements;
+  // Save the old index of the root. Note that if we're here, then
+  //   0 <= old_num_elements < new_num_elements <= capacity_
+  // Therefore, it's guaranteed that data_[old_root_idx - 1] is not out of range.
+  const size_type old_root_idx = root_idx_;
+  // Compute the new index of the root.
+  root_idx_ = recomputeRootIndex();
+  // If the root has changed, then we need to initialize the new nodes [root_idx_ - 1; old_root_idx - 1)
+  // with the total sum.
+  const auto iter_total_sum_new = data_.begin() + root_idx_ - 1;
+  const auto iter_total_sum_old = data_.begin() + old_root_idx - 1;
+  std::fill(iter_total_sum_new, iter_total_sum_old, *iter_total_sum_old);
 }
 
 template<class T>

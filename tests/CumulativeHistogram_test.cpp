@@ -183,7 +183,7 @@ TEST(CumulativeHistogram, Reserve) {
   CumulativeHistogram<unsigned int> histogram(kElements.begin(), kElements.end());
   // Reserve memory for more elements than the histogram can currently store.
   const std::size_t capacity_old = histogram.capacity();
-  const std::size_t capacity_new = capacity_old * 2 + 5;
+  const std::size_t capacity_new = capacity_old * 2;
   histogram.reserve(capacity_new);
   // The number of elements should remain the same.
   EXPECT_EQ(histogram.size(), kElements.size());
@@ -329,7 +329,7 @@ TEST(CumulativeHistogram, ResizeToMoreElementsOutsideCapacity) {
   CumulativeHistogram<unsigned int> histogram{ kElements.begin(), kElements.end() };
   const std::span<const unsigned int> elements_old = histogram.elements();
   // Resize to more elements than the histogram can currently store.
-  const std::size_t kNewSize = histogram.capacity() + 1;
+  const std::size_t kNewSize = histogram.capacity() * 2;
   histogram.resize(kNewSize);
   // Size should become kNewSize.
   EXPECT_EQ(histogram.size(), kNewSize);
@@ -452,6 +452,32 @@ TEST(CumulativeHistogram, UpperBoundZeros) {
   const CumulativeHistogram<unsigned int> histogram{ kElements.begin(), kElements.end() };
   EXPECT_TRUE(CheckUpperBound(histogram, 0u));
   EXPECT_TRUE(CheckUpperBound(histogram, 1u));
+}
+
+TEST(CumulativeHistogram, IsSubtree) {
+  using Detail_NS::findLeftmostSubtreeWithExactCapacity;
+  constexpr std::size_t kNotSubtree = static_cast<std::size_t>(-1);
+
+  static_assert(findLeftmostSubtreeWithExactCapacity(0, 2) == kNotSubtree);
+  static_assert(findLeftmostSubtreeWithExactCapacity(0, 3) == kNotSubtree);
+  static_assert(findLeftmostSubtreeWithExactCapacity(1, 2) == kNotSubtree);
+  static_assert(findLeftmostSubtreeWithExactCapacity(1, 3) == kNotSubtree);
+
+  static_assert(findLeftmostSubtreeWithExactCapacity(2, 3) == 1);  // 3 == 2 + 1
+  static_assert(findLeftmostSubtreeWithExactCapacity(2, 4) == 1);  // 4 == 2 + 2
+
+  static_assert(findLeftmostSubtreeWithExactCapacity(6, 6) == 0);  // 6 == 6
+  static_assert(findLeftmostSubtreeWithExactCapacity(6, 7) == kNotSubtree);
+
+  static_assert(findLeftmostSubtreeWithExactCapacity(6, 11) == 1); // 11 == 6 + 5
+  static_assert(findLeftmostSubtreeWithExactCapacity(6, 12) == 1); // 12 == 6 + 6
+  static_assert(findLeftmostSubtreeWithExactCapacity(6, 10) == kNotSubtree);
+
+  static_assert(findLeftmostSubtreeWithExactCapacity(6, 21) == 2); // 21 == 6 + 5 + 5 + 5
+  static_assert(findLeftmostSubtreeWithExactCapacity(6, 22) == 2); // 22 == 6 + 5 + 6 + 5
+  static_assert(findLeftmostSubtreeWithExactCapacity(6, 23) == 2); // 23 == 6 + 6 + 6 + 5
+  static_assert(findLeftmostSubtreeWithExactCapacity(6, 24) == 2); // 24 == 6 + 6 + 6 + 6
+  static_assert(findLeftmostSubtreeWithExactCapacity(6, 25) == kNotSubtree);
 }
 
 }
