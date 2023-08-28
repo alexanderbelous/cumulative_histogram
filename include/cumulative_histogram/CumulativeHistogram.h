@@ -192,9 +192,17 @@ class CumulativeHistogram {
   std::pair<const_iterator, T> upperBound(const T& value) const;
 
  private:
-  // Recomputes the index of the root node.
+  // Returns the index of the effective root node.
+  // The root node data_[getRootIndex()] stores the sum of elements from the left subtree -
+  //     but only if there is a left subtree (i.e. if there current tree has at least 1 node).
+  // data_[getRootIndex() - 1] stores the total sum - but only if there is at least 1 element.
+  //
+  // TODO: the index of the root node may change when the number of elements or the capacity
+  // changes. Instead of taking care to keep it up to date, it's safer to just compute it when
+  // needed, since it can be done in O(1).
+  //
   // Time complexity: O(1).
-  constexpr size_type recomputeRootIndex() const noexcept;
+  constexpr size_type getRootIndex() const noexcept;
 
   // Returns the maximum number of elements that can represented by the current tree.
   //   num_elements <= capacityCurrent() <= capacity_
@@ -211,6 +219,10 @@ class CumulativeHistogram {
   // Time complexity: O(log(N)).
   template<class Compare>
   std::pair<const_iterator, T> lowerBoundImpl(const T& value, Compare cmp) const;
+
+  T& totalSumUnchecked();
+
+  const T& totalSumUnchecked() const;
 
   template<bool Mutable>
   class TreeView;
@@ -247,13 +259,6 @@ class CumulativeHistogram {
   size_type num_elements_ = 0;
   // Current capacity Nmax.
   size_type capacity_ = 0;
-  // Index of the root node.
-  // * This is always equal to recomputeRootIndex().
-  // * data_[root_idx_] may be out of range if the tree has 0 nodes.
-  // * data_[root_idx_-1] stores the total sum of elements [0; num_elements_) unless
-  //   the histogram is empty.
-  // TODO: consider removing and calling recomputeRootIndex() when needed.
-  size_type root_idx_ = 1;
 };
 
 // ======================================== Implementation ========================================
@@ -590,7 +595,7 @@ T CumulativeHistogram<T>::buildTreeImpl(std::span<const T> elements, const TreeV
 template<class T>
 constexpr
 typename CumulativeHistogram<T>::size_type
-CumulativeHistogram<T>::recomputeRootIndex() const noexcept {
+CumulativeHistogram<T>::getRootIndex() const noexcept {
   return capacity_ + 1 + Detail_NS::findDeepestNodeForElements(num_elements_, capacity_);
 }
 
@@ -614,8 +619,7 @@ template<class T>
 CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
   data_(num_elements ? num_elements + 1 + Detail_NS::countNodesInTree(num_elements) : 0),
   num_elements_(num_elements),
-  capacity_(num_elements),
-  root_idx_(capacity_ + 1)
+  capacity_(num_elements)
 {
   // This function constructs a CumulativeHistogram that is at its full capacity.
   // data_[num_elements] stores the total sum.
@@ -644,8 +648,7 @@ template<class T>
 CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
   data_(std::move(elements)),
   num_elements_(data_.size()),
-  capacity_(num_elements_),
-  root_idx_(capacity_ + 1)
+  capacity_(num_elements_)
 {
   if (num_elements_ == 0) {
     return;
@@ -754,14 +757,12 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
   // Replace old data with new data.
   data_ = std::move(new_data);
   capacity_ = num_elements;
-  root_idx_ = recomputeRootIndex();
 }
 
 template<class T>
 void CumulativeHistogram<T>::clear() noexcept {
   setZero();
   num_elements_ = 0;
-  root_idx_ = 1;
 }
 
 template<class T>
@@ -771,7 +772,6 @@ void CumulativeHistogram<T>::setZero() {
 
 template<class T>
 void CumulativeHistogram<T>::push_back() {
-  const bool was_empty = empty();
   // Double the capacity if needed.
   if (num_elements_ == capacity_) {
     const size_type capacity_new = capacity_ == 0 ? 1 : (capacity_ * 2);
@@ -779,18 +779,19 @@ void CumulativeHistogram<T>::push_back() {
   }
   // TODO: this won't work if pop_back() does't clean up after itself. In that
   // case we'll need to initialize the new nodes.
+
+  // Note that the code above ensures that capacity is not 0, so
+  // capacityCurrent() != 0. Therefore, if num_elements_ == 0, then the root remains
+  // the same.
   const bool should_update_root = (num_elements_ == capacityCurrent());
   ++num_elements_;
-  // Update the root if needed.
+  // If the root has changed and the histogram wasn't empty, then we need to
+  // initialize the new node storing the total sum.
   if (should_update_root) {
-    // This is almost always equivalent to --root_idx_, but not if the histogram had 0
-    // nodes before push_back(). Instead of tracking the edge cases, we can just recompute
-    // the index of the root.
-    root_idx_ = recomputeRootIndex();
-    // Initialize the total sum with the sum of elements from the left subtree.
-    if (!was_empty) {
-      data_[root_idx_ - 1] = data_[root_idx_];
-    }
+    // The root stores the sum of elements from the left subtree.
+    const size_type root_idx = getRootIndex();
+    // We have added a 0-initialized element, so the total sum hasn't changed.
+    totalSumUnchecked() = data_[root_idx];
   }
 }
 
@@ -807,13 +808,6 @@ void CumulativeHistogram<T>::pop_back() {
   // The number of nodes in the current tree.
   const size_type nodes_current = Detail_NS::countNodesInTree(capacity_current);
   --num_elements_;
-  if (nodes_current > 0) {
-    const size_type num_elements_in_left_subtree = (capacity_current + 1) / 2;
-    // If all "real" elements are now in the left subtree, declare the left subtree as the new tree.
-    if (num_elements_ <= num_elements_in_left_subtree) {
-      ++root_idx_;
-    }
-  }
 }
 
 template<class T>
@@ -833,17 +827,17 @@ void CumulativeHistogram<T>::resize(size_type num_elements) {
   }
   // Append N'-N elements if N < N'.
   if (capacity() >= num_elements) {
-    // TODO: this won't work if pop_back() does't clean up after itself.
-    num_elements_ = num_elements;
     // Save the old index of the root. Note that if we're here, then
     //   0 <= old_num_elements < new_num_elements <= capacity_
     // Therefore, it's guaranteed that data_[old_root_idx - 1] is not out of range.
-    const size_type old_root_idx = root_idx_;
+    const size_type old_root_idx = getRootIndex();
+    // TODO: this won't work if pop_back() does't clean up after itself.
+    num_elements_ = num_elements;
     // Compute the new index of the root.
-    root_idx_ = recomputeRootIndex();
+    const size_type root_idx = getRootIndex();
     // If the root has changed, then we need to initialize the new nodes [root_idx_ - 1; old_root_idx - 1)
     // with the total sum.
-    const auto iter_total_sum_new = data_.begin() + root_idx_ - 1;
+    const auto iter_total_sum_new = data_.begin() + root_idx - 1;
     const auto iter_total_sum_old = data_.begin() + old_root_idx - 1;
     std::fill(iter_total_sum_new, iter_total_sum_old, *iter_total_sum_old);
   } else {
@@ -881,7 +875,8 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
     throw std::out_of_range("CumulativeHistogram::increment(): k is out of range.");
   }
   // Tree representing the elements [0; N).
-  const std::span<T> nodes = std::span<T>{data_}.subspan(root_idx_, numNodesCurrent());
+  const size_type root_idx = getRootIndex();
+  const std::span<T> nodes = std::span<T>{data_}.subspan(root_idx, numNodesCurrent());
   TreeView<true> tree(nodes, 0, capacityCurrent() - 1);
   while (!tree.empty()) {
     // Check whether the element k is in the left or the right branch.
@@ -894,7 +889,7 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
     }
   }
   // Update the total sum.
-  data_[root_idx_ - 1] += value;
+  totalSumUnchecked() += value;
   // Update the element itself.
   data_[k] += value;
 }
@@ -906,11 +901,12 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
   }
   // Special case for the total sum.
   if (k == num_elements_ - 1) {
-    return data_[root_idx_ - 1];
+    return totalSumUnchecked();
   }
   T result {};
   // Tree representing the elements [0; N).
-  const std::span<const T> nodes = std::span<const T>{data_}.subspan(root_idx_, numNodesCurrent());
+  const size_type root_idx = getRootIndex();
+  const std::span<const T> nodes = std::span<const T>{data_}.subspan(root_idx, numNodesCurrent());
   TreeView<false> tree(nodes, 0, capacityCurrent() - 1);
   while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [first; middle].
@@ -934,7 +930,7 @@ constexpr T CumulativeHistogram<T>::totalSum() const {
   if (empty()) {
     throw std::logic_error("CumulativeHistogram::totalSum(): the histogram is empty.");
   }
-  return data_[root_idx_ - 1];
+  return totalSumUnchecked();
 }
 
 template<class T>
@@ -943,13 +939,14 @@ std::pair<typename CumulativeHistogram<T>::const_iterator, T>
 CumulativeHistogram<T>::lowerBoundImpl(const T& value, Compare cmp) const {
   // Terminate if there are no elements or if cmp(totalSum(), value) is true -
   // in these cases there is no such index k that !cmp(prefixSum(k), value).
-  if ((num_elements_ == 0) || cmp(data_[root_idx_ - 1], value)) {
+  if ((num_elements_ == 0) || cmp(totalSumUnchecked(), value)) {
     return { end(), T{} };
   }
   T prefix_sum_before_lower {};
-  T prefix_sum_upper = data_[root_idx_ - 1];
+  T prefix_sum_upper = totalSumUnchecked();
   // Tree representing the elements [k_lower; k_upper] = [0; N-1].
-  const std::span<const T> nodes = std::span<const T>{ data_ }.subspan(root_idx_, numNodesCurrent());
+  const size_type root_idx = getRootIndex();
+  const std::span<const T> nodes = std::span<const T>{ data_ }.subspan(root_idx, numNodesCurrent());
   TreeView<false> tree(nodes, 0, capacityCurrent() - 1);
   while (!tree.empty()) {
     // TODO: be careful when checking tree.root() - it's possible that middle >= N,
@@ -992,6 +989,16 @@ CumulativeHistogram<T>::upperBound(const T& value) const {
   // Effectively implements `lhs <= rhs`, but only requires operator< to be defined for T.
   auto less_equal = [](const T& lhs, const T& rhs) { return !(rhs < lhs); };
   return lowerBoundImpl(value, less_equal);
+}
+
+template<class T>
+T& CumulativeHistogram<T>::totalSumUnchecked() {
+  return data_[getRootIndex() - 1];
+}
+
+template<class T>
+const T& CumulativeHistogram<T>::totalSumUnchecked() const {
+  return data_[getRootIndex() - 1];
 }
 
 }  // namespace CumulativeHistogram_NS

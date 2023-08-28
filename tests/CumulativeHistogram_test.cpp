@@ -170,7 +170,7 @@ TEST(CumulativeHistogram, Clear) {
   // Push back 5 new elements {0, 1, 2, 3, 4}.
   for (std::size_t i = 0; i < kNumElements; ++i) {
     histogram.push_back();
-    histogram.increment(i, i);
+    histogram.increment(i, static_cast<unsigned int>(i));
     EXPECT_EQ(histogram.capacity(), kNumElements);
     EXPECT_EQ(histogram.size(), i + 1);
     EXPECT_EQ(histogram.element(i), i);
