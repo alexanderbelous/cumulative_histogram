@@ -52,7 +52,7 @@ class CumulativeHistogram {
   explicit CumulativeHistogram(size_type num_elements, const T& value);
 
   // Constructs a cumulative histogram for the specified elements.
-  // TODO: remove this contructor if you decide not to store data in std::vector.
+  // Time complexity: O(N).
   explicit CumulativeHistogram(std::vector<T>&& elements);
 
   // Constructs a cumulative histogram for the specified elements.
@@ -74,7 +74,7 @@ class CumulativeHistogram {
   // Returns a reverse iterator preceding the first element.
   constexpr const_reverse_iterator rend() const noexcept;
 
-  // Returns true if the number of elements is greater than 0, false otherwise.
+  // Returns true if the number of elements is 0, false otherwise.
   // Time complexity: O(1).
   constexpr bool empty() const noexcept;
 
@@ -193,14 +193,9 @@ class CumulativeHistogram {
 
  private:
   // Returns the index of the effective root node.
-  // The root node data_[getRootIndex()] stores the sum of elements from the left subtree -
-  //     but only if there is a left subtree (i.e. if there current tree has at least 1 node).
-  // data_[getRootIndex() - 1] stores the total sum - but only if there is at least 1 element.
-  //
-  // TODO: the index of the root node may change when the number of elements or the capacity
-  // changes. Instead of taking care to keep it up to date, it's safer to just compute it when
-  // needed, since it can be done in O(1).
-  //
+  // * nodes_[getRootIndex()] stores the sum of elements from the left subtree -
+  //   but only if there is a left subtree (i.e. if there current tree has at least 1 node).
+  // * nodes_[getRootIndex() - 1] stores the total sum - but only if there is at least 1 element.
   // Time complexity: O(1).
   constexpr size_type getRootIndex() const noexcept;
 
@@ -400,6 +395,7 @@ namespace Detail_NS {
   // Returns the total number of nodes in the auxiliary tree for
   // CumulativeHistogram with the specified number of elements.
   // \param num_elements - the total number of elements represented by the tree.
+  // Time complexity: O(1).
   constexpr std::size_t countNodesInTree(std::size_t num_elements) noexcept {
     // This number can be computed via a recurrent relation:
     //   f(0) = 0
