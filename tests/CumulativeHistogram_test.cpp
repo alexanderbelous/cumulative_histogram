@@ -221,6 +221,19 @@ TEST(CumulativeHistogram, PushBackZeroInitialized) {
   EXPECT_EQ(histogram.element(1), 5);
   EXPECT_EQ(histogram.totalSum(), 47);
   EXPECT_TRUE(CheckPrefixSums(histogram));
+  histogram.push_back();
+  EXPECT_EQ(histogram.size(), 3);
+  EXPECT_EQ(histogram.element(0), 42);
+  EXPECT_EQ(histogram.element(1), 5);
+  EXPECT_EQ(histogram.element(2), 0);
+  EXPECT_EQ(histogram.totalSum(), 47);
+  EXPECT_TRUE(CheckPrefixSums(histogram));
+  histogram.increment(2, 3);
+  EXPECT_EQ(histogram.element(0), 42);
+  EXPECT_EQ(histogram.element(1), 5);
+  EXPECT_EQ(histogram.element(2), 3);
+  EXPECT_EQ(histogram.totalSum(), 50);
+  EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
 TEST(CumulativeHistogram, PopBack) {
