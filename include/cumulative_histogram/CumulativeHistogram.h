@@ -1113,23 +1113,13 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value, Compare cmp) const {
   if (empty()) {
     return { end(), T{} };
   }
-  // Terminate if cmp(totalSum(), value) is true - in this case there is no such
-  // index k that !cmp(prefixSum(k), value).
-  // TODO: don't compute the total sum.
-  const T total_sum = totalSum();
-  if (cmp(total_sum, value)) {
-    return { end(), T{} };
-  }
   T prefix_sum_before_lower {};
-  T prefix_sum_upper = total_sum;
+  T prefix_sum_upper {};
   // Tree representing the elements [k_lower; k_upper] = [0; N-1].
   const size_type root_idx = getRootIndex();
   const std::span<const T> nodes = std::span<const T>{ nodes_ }.subspan(root_idx, numNodesCurrent());
-  TreeView<false> tree(nodes, 0, capacityCurrent() - 1);
+  TreeViewAdvanced<false> tree(nodes, size(), capacityCurrent());
   while (!tree.empty()) {
-    // TODO: be careful when checking tree.root() - it's possible that middle >= N,
-    // and if you decide not to initialize nodes for non-existent nodes, then accessing tree.root()
-    // can be UB. In that case you should just go to the left child unconditionally.
     // The root of the tree stores the sum of all elements [k_lower; middle].
     // Sum of elements [0; middle]
     T prefix_sum_middle = prefix_sum_before_lower + tree.root();
@@ -1146,12 +1136,29 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value, Compare cmp) const {
       tree = tree.leftChild();
     }
   }
-  const std::size_t k_lower = tree.elementFirst(); // cmp(prefixSum(i), value) == true for all i < k_lower
-  const std::size_t k_upper = tree.elementLast();  // cmp(prefixSum(k_upper), value) == false
+  // We know that cmp(prefixSum(i), value) == true for all i < k_lower
+  const std::size_t k_lower = tree.elementFirst();
+  // Compute prefixSum(k_lower).
   prefix_sum_before_lower += elements_[k_lower];
   if (!cmp(prefix_sum_before_lower, value)) {
+    // OK, k_lower is the answer.
     return { begin() + k_lower, prefix_sum_before_lower };
   }
+  // We know that cmp(prefixSum(i), value) == false for all i > k_upper (if there is such i).
+  const std::size_t k_upper = k_lower + tree.numElements() - 1;
+  // If k_upper is the last element, then `prefix_sum_upper` hasn't been initialized.
+  if (k_upper == size() - 1) {
+    // If k_lower == k_upper, then cmp(totalSum(), value) == cmp(prefixSum(k_lower), value) == true.
+    if (k_lower == k_upper) {
+      return { end(), T{} };
+    }
+    prefix_sum_upper = prefix_sum_before_lower + elements_[k_upper];
+    // If cmp(totalSum(), value) == true, then there is no such index k that cmp(prefixSum(k), value) == false.
+    if (cmp(prefix_sum_upper, value)) {
+      return { end(), T{} };
+    }
+  }
+  // OK, cmp(prefixSum(k), value) == false, so k_upper is the answer.
   return { begin() + k_upper, prefix_sum_upper };
 }
 
