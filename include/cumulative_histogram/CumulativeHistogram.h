@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bit>
+#include <cassert>
 #include <iterator>
 #include <stdexcept>
 #include <span>
@@ -219,11 +220,11 @@ class CumulativeHistogram {
   // \param elements - values of elements for which we want to track prefix sums.
   // \param tree - TreeView for some or all elements from `elements`.
   // \returns the total sum of elements represented by `tree`.
-  static T buildTreeImpl(std::span<const T> elements, const TreeView<true>& tree);
+  static T buildTreeImpl(std::span<const T> elements, const TreeViewAdvanced<true>& tree);
 
   // This function is intended to be called for empty trees (trees without nodes).
   // Such trees always represent either 1 or 2 elements, so there's no need for a loop.
-  static constexpr T sumElementsOfEmptyTree(std::span<const T> elements, const TreeView<false>& tree);
+  static constexpr T sumElementsOfEmptyTree(std::span<const T> elements, const TreeViewAdvanced<false>& tree);
 
   // This function is intended to be called for trees at their full capacity.
   static constexpr T sumElementsOfFullTree(std::span<const T> elements, TreeView<false> tree);
@@ -603,24 +604,20 @@ void CumulativeHistogram<T>::buildTree(std::span<const T> elements, std::span<T>
   const std::size_t root_idx = level;
   const std::size_t num_nodes_at_level = Detail_NS::countNodesInTree(capacity_at_level);
   const std::span<T> nodes_at_level = nodes.subspan(root_idx, num_nodes_at_level);
-  TreeView<true> tree(nodes_at_level, 0, capacity_at_level - 1);
-  //nodes[root_idx - 1] =
+  TreeViewAdvanced<true> tree(nodes_at_level, elements.size(), capacity_at_level);
   buildTreeImpl(elements, tree);
-  // TODO: zero-initialize reserved elements?
 }
 
 template<class T>
 constexpr T CumulativeHistogram<T>::sumElementsOfEmptyTree(std::span<const T> elements,
-                                                           const TreeView<false>& tree) {
+                                                           const TreeViewAdvanced<false>& tree) {
+  const std::size_t num_elements = tree.numElements();
+  assert(0 < num_elements && num_elements <= 2);
   const std::size_t first = tree.elementFirst();
-  const std::size_t last = tree.elementLast();
-  if (first >= elements.size()) {
-    return {};
-  }
-  if (first == last || last >= elements.size()) {
+  if (num_elements == 1) {
     return elements[first];
   }
-  return elements[first] + elements[last];
+  return elements[first] + elements[first + 1];
 }
 
 template<class T>
@@ -641,7 +638,7 @@ constexpr T CumulativeHistogram<T>::sumElementsOfFullTree(std::span<const T> ele
 }
 
 template<class T>
-T CumulativeHistogram<T>::buildTreeImpl(std::span<const T> elements, const TreeView<true>& tree) {
+T CumulativeHistogram<T>::buildTreeImpl(std::span<const T> elements, const TreeViewAdvanced<true>& tree) {
   // Iterative version
   /*
   if (tree.empty())
