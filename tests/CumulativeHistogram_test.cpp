@@ -1,6 +1,7 @@
 #include <cumulative_histogram/CumulativeHistogram.h>
 
 #include <array>
+#include <complex>
 #include <numeric>
 #include <sstream>
 #include <gtest/gtest.h>
@@ -508,6 +509,35 @@ TEST(CumulativeHistogram, IsSubtree) {
   static_assert(findLeftmostSubtreeWithExactCapacity(6, 23) == 2); // 23 == 6 + 6 + 6 + 5
   static_assert(findLeftmostSubtreeWithExactCapacity(6, 24) == 2); // 24 == 6 + 6 + 6 + 6
   static_assert(findLeftmostSubtreeWithExactCapacity(6, 25) == kNotSubtree);
+}
+
+TEST(CumulativeHistogram, Complex) {
+  constexpr std::array<std::complex<float>, 10> kElements = {{
+    {1.0, 0.0},
+    {0.0, 1.0},
+    {1.5, -2.5},
+    {-2.5, 3.25},
+    {-4.0, 3.75},
+    {0.25, -1.25},
+    {-1.75, 4.5},
+    {20.0, -7.0},
+    {0.0, 0.0},
+    {-0.25, 0.25}
+  }};
+  CumulativeHistogram<std::complex<float>> histogram;
+  for (std::size_t i = 0; i < kElements.size(); ++i) {
+    histogram.push_back(kElements[i]);
+    const std::size_t new_size = i + 1;
+    EXPECT_EQ(histogram.size(), new_size);
+    // Check elements.
+    for (std::size_t j = 0; j < new_size; ++j) {
+      EXPECT_EQ(histogram.element(j), kElements[j]);
+    }
+    EXPECT_EQ(histogram.totalSum(), std::accumulate(kElements.begin(), kElements.begin() + new_size, std::complex<float>(0.0)));
+    EXPECT_TRUE(CheckPrefixSums(histogram));
+    // Compilation error: std::complex<float> doesnt't have operator<.
+    // auto [iter, prefix_sum] = histogram.lowerBound(std::complex<float>(0.25, 0.25));
+  }
 }
 
 }
