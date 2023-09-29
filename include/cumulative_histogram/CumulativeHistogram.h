@@ -216,9 +216,9 @@ class CumulativeHistogram {
   //       Or just pass const std::vector& and let buildTree() decide the optimal structure.
   static void buildTree(std::span<const T> elements, std::span<T> nodes, std::size_t capacity);
 
-  // Initializes the nodes of the specified TreeView according to the values of the given elements.
+  // Initializes the nodes of the specified tree according to the values of the given elements.
   // \param elements - values of elements for which we want to track prefix sums.
-  // \param tree - TreeView for some or all elements from `elements`.
+  // \param tree - tree for some or all elements from `elements`.
   // \returns the total sum of elements represented by `tree`.
   static T buildTreeImpl(std::span<const T> elements, const TreeViewAdvanced<true>& tree);
 
@@ -276,30 +276,21 @@ class CumulativeHistogram {
 // | x0+x1+x2+x3+x4+x5 | x0+x1+x2 | x0+x1   | x3+x4 | x6+x7+x8 | x6 + x7 |
 // +-------------------+----------+---------+-------+----------+---------+
 // Any prefix sum can be computed by going from the root of the tree to the leaf:
-// +------------------------------------------------------------------------------------------+
-// |  s0  |  s1  |  s2  |  s3   |  s4   |  s5  |  s6   |  s7   |  s8   |  s9      |  s10      |
-// +------------------------------------------------------------------------------------------+
-// |  x0  |  n2  |  n1  | n1+x3 | n1+n3 |  n0  | n0+x6 | n0+n5 | n0+n4 | n0+n4+x9 | total_sum |
-// +------------------------------------------------------------------------------------------+
+// +---------------------------------------------------------------------------------------------+
+// |  s0  |  s1  |  s2  |  s3   |  s4   |  s5  |  s6   |  s7   |  s8   |  s9      |    s10       |
+// +---------------------------------------------------------------------------------------------+
+// |  x0  |  n2  |  n1  | n1+x3 | n1+n3 |  n0  | n0+x6 | n0+n5 | n0+n4 | n0+n4+x9 | n0+n4+x9+x10 |
+// +---------------------------------------------------------------------------------------------+
 //
 // In order to support efficient insertion, the class grows in the same way that std::vector does:
 // if size() == capacity(), then the next call to push_back() will allocate memory for a histogram
 // capable of storing 2N elements.
 //
-// The data is stored like this:
-// * N = the number of elements.
-// * Nmax = current capacity.
-// * M = countNodesInTree(Nmax)
-// +------+------+------+------+------+------------+------+--------+--------+--------+------+----------+
-// |   0  |   1  |   2  | .... |  N-1 | .......... | Nmax | Nmax+1 | Nmax+2 | Nmax+3 | ...  | Nmax+M-1 |
-// +------+------+------+------+------+------------+------+--------+--------+--------+------+----------+
-// |  x0  |  x1  |  x2  | .... | xN-1 | ...free... |  n0  |   n1   |   n2   |   n3   | .... |   nM-1   |
-// +------+------+------+------+------+------------+------+--------+--------+--------+------+----------+
-// In practice, the root is not necessarily at n0: if the current number of elements is <= ceil(N/2),
-// then the right subtree is empty, and n0 is the same as total_sum, so we may as well pretend that
-// the left subtree *is* the tree, and that the root is at n1. This is applied recursively until
-// the right subtree is not empty. This way we ensure that the time complexity of the operations
-// is actually O(logN), and not O(logNmax).
+// Note that the way the nodes are stored in a plain array allows to view any subtree as a subspan of
+// that array. This comes in handy, allowing us to pretend that the deepest leftmost subtree that can
+// represent all current elements *is* the tree. This way we ensure that the time complexity of the
+// operations is actually O(logN), and not O(logNmax), where N is the number of elements and
+// Nmax is capacity.
 template<class T>
 template<bool Mutable>
 class CumulativeHistogram<T>::TreeView {
@@ -508,7 +499,7 @@ public:
     TreeViewAdvanced(nodes, num_elements, 0, capacity - 1)
   {}
 
-  // Converting constructor for an immutable TreeView from a mutable TreeView.
+  // Converting constructor for an immutable TreeViewAdvanced from a mutable TreeViewAdvanced.
   template<class Enable = std::enable_if_t<!Mutable>>
   constexpr TreeViewAdvanced(const TreeViewAdvanced<!Mutable>& tree) noexcept :
     TreeViewAdvanced(tree.nodes(), tree.capacity(), tree.elementFirst(), tree.elementTheoreticalLast())
