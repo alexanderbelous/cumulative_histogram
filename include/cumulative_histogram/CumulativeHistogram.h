@@ -934,40 +934,19 @@ void CumulativeHistogram<T>::push_back(const T& value) {
 
   // There are 2 possibilities - either we can simply add the new element without constructing
   // any new nodes, or we need to extend some subtree by constructing a new root.
-  std::span<const T> tmp_elements{ elements_ };
-  std::size_t tmp_capacity = capacityCurrent();
-  std::size_t tmp_num_nodes = numNodesCurrent();
-  std::size_t tmp_root_idx = getRootIndex();
+  const std::span<const T> nodes = std::span<const T>{ nodes_ }.subspan(getRootIndex(), numNodesCurrent());
+  TreeViewAdvanced<false> tree { nodes, size(), capacityCurrent() };
   // TODO: get rid of this loop. Traversing the tree has O(logN) time complexity, but it can be avoided
   // if we store the path to the deepest rightmost subtree. In that case updating the path can be done in O(1).
-  while (tmp_elements.size() != tmp_capacity) {
+  while (tree.numElements() != tree.capacity()) {
     // If the tree has no nodes (which means it can represent at most 2 elements) and is not at full capacity,
     // we can simply add the new element without constructing any new nodes.
-    if (tmp_num_nodes == 0) {
+    if (tree.empty()) {
       elements_.push_back(value);
       return;
     }
     // Otherwise, the left subtree must be full, so we switch to the effective right subtree.
-    // If the current tree has at least 1 node, then its left subtree must be full.
-    // We also know from the loop condition that the current tree is not full, therefore the
-    // immediate right subtree is neither empty nor full.
-    const std::size_t num_nodes_left = tmp_num_nodes / 2;      // ceil((tmp_num_nodes - 1) / 2)
-    const std::size_t capacity_left = (tmp_capacity + 1) / 2;  // ceil(tmp_capacity / 2)
-    const std::size_t capacity_right = tmp_capacity / 2;       // floor(tmp_capacity / 2)
-    const std::span<const T> elements_right = tmp_elements.subspan(capacity_left);
-    // Find the deepest leftmost subtree of the immediate right subtree that represents all
-    // of `elements_right`.
-    const std::size_t level = Detail_NS::findDeepestNodeForElements(elements_right.size(), capacity_right);
-    // Check if the effective right subtree is full.
-    // If it is, then its level cannot be 0 - that would imply that the current tree
-    // is full, and we have already checked that this is not the case.
-    const std::size_t capacity_at_level = Detail_NS::countElementsInLeftmostSubtree(capacity_right, level);
-    const std::size_t num_nodes_at_level = Detail_NS::countNodesInTree(capacity_at_level);
-    // Switch to the *effective* right subtree.
-    tmp_elements = elements_right;
-    tmp_capacity = capacity_at_level;
-    tmp_num_nodes = num_nodes_at_level;
-    tmp_root_idx += (1 + num_nodes_left + level);
+    tree = tree.rightChild();
   }
   // If we are here, then we have found some non-empty subtree (maybe the main tree) that is at full capacity.
   // This subtree cannot be the *immediate* right subtree of some existing tree, because that would mean that
@@ -976,17 +955,18 @@ void CumulativeHistogram<T>::push_back(const T& value) {
   // Hence, this subtree is NOT the *immediate* right subtree, i.e. it's the left subtree (at some depth K) of the
   // *immediate* right subtree. We will construct a new root, whose left subtree will be the tree we've found, and
   // the right subtree will store the element that we are adding.
+  // TreeViewAdvanced doesn't store the index of the root node, but it's easy to compute via pointer arithmetic.
+  const std::size_t tmp_root_idx = tree.nodes().data() - nodes_.data();
   const std::size_t root_idx_new = tmp_root_idx - 1;
   // Compute the sum of all elements in the effective right subtree.
   // This has O(logN) time complexity in the worst case, but, fortunately, the amortized time complexity is O(1).
-  const std::span<T> tmp_nodes = std::span<T>{ nodes_ }.subspan(tmp_root_idx, tmp_num_nodes);
-  TreeView<true> tmp_tree(tmp_nodes, 0, tmp_capacity - 1);
+  const std::span<const T> tmp_elements = std::span<const T>(elements_).subspan(tree.elementFirst(), tree.numElements());
+  TreeView<false> tmp_tree(tree.nodes(), 0, tree.capacity() - 1);
   // Construct the new node.
   nodes_[root_idx_new] = sumElementsOfFullTree(tmp_elements, tmp_tree);
   // The new element is added to the right subtree of the newly constructed tree. This subtree doesn't
   // have any nodes yet, because it only represents 1 element.
   elements_.push_back(value);
-  return;
 }
 
 template<class T>
