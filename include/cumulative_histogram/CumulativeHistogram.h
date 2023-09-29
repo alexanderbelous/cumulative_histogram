@@ -88,7 +88,8 @@ class CumulativeHistogram {
 
   // Reserves memory for a histogram capable of storing the specified number of elements.
   // The values of existing elements remain unchanged.
-  // Time complexity: O(N), where N is the current number of elements.
+  // Time complexity: O(1) if num_elements <= this->capacity(),
+  //                  otherwise O(N), where N is the current number of elements.
   void reserve(size_type num_elements);
 
   // Erases all elements.
@@ -100,7 +101,8 @@ class CumulativeHistogram {
   void clear() noexcept;
 
   // Add a zero-initialized element to the end.
-  // Time complexity: amortized O(1).
+  // Time complexity: amortized O(logN).
+  // TODO: make it amortized O(1).
   void push_back();
 
   // Add an element to the end.
@@ -110,35 +112,12 @@ class CumulativeHistogram {
 
   // Removes the last element.
   // Throws std::logic_error if this->empty().
-  // Time complexity: O(logN).
-  //
-  // TODO:
-  //   AFAIU, it should be possible to make it O(1) at the cost of
-  // making push_back() a bit slower (though still having amortized O(logN) time complexity).
-  //   When the rightmost element is removed, only the total sum actually needs to be updated.
-  // Yes, other nodes are affected, but the affected nodes will not be accesed anymore
-  // (the node is affected if it contains x[i]; if we remove x[i] then no valid call to
-  // prefixSum() will actually add values from the nodes that contain x[i]).
-  //   However, this means that these nodes will store garbage data; if we call push_back()
-  // afterwards, we'll need to ensure that it zero-initializes these nodes before incrementing
-  // them. This can still be done in O(logN) - e.g., push_back() can initialize the
-  // nodes that contain the new element, and there's at most O(log) of them.
-  //   Then again, we might want to do this in push_back() anyway for 2 reasons:
-  //     1. To avoid zeroing out newly allocated memory. reserve(M) will have O(M) time coplexity
-  //        if we zero-initialize, but only O(N) if we don't.
-  //     2. To reduce the rounding errors when T is a floating-point type.
-  //
-  // TODO:
-  //   Should I call ~T() at least for the element that has been removed?
-  //   ~T() will likely be trivial, but doesn't have to be - e.g., one might want to instantiate
-  //   CumulativeHistogram for some BigInt class that uses heap storage.
-  //   Pros: It will reduce memory usage for the scenarios like BigInt.
-  //   Cons: I'd rather avoid tracking the lifetimes of individual counters.
+  // Time complexity: O(1).
   void pop_back();
 
   // Changes the number of elements stored.
   // \param num_elements - the new number of elements in the histogram.
-  // Time complexity: O(|N' - N|), if capacity() >= num_elements,
+  // Time complexity: O(|N' - N|), if this->capacity() >= num_elements,
   //                  O(N') otherwise.
   void resize(size_type num_elements);
 
@@ -897,31 +876,7 @@ void CumulativeHistogram<T>::setZero() {
 
 template<class T>
 void CumulativeHistogram<T>::push_back() {
-  // Double the capacity if needed.
-  if (size() == capacity()) {
-    const size_type capacity_new = (capacity() == 0) ? 2 : (capacity() * 2);
-    reserve(capacity_new);
-  }
-  // TODO: this won't work if pop_back() does't clean up after itself. In that
-  // case we'll need to initialize the new nodes.
-
-  // Note that the code above ensures that capacity is not 0, so
-  // capacityCurrent() != 0. Therefore, if num_elements_ == 0, then the root remains
-  // the same.
-  const bool should_update_root = (size() == capacityCurrent());
-  T total_sum {};
-  if (should_update_root) {
-    total_sum = totalSum();
-  }
-  elements_.emplace_back();
-  // If the root has changed and the histogram wasn't empty, then we need to
-  // initialize the new root node.
-  if (should_update_root) {
-    // The root stores the sum of elements from the left subtree.
-    const size_type root_idx = getRootIndex();
-    // We have added a 0-initialized element, so the total sum hasn't changed.
-    nodes_[root_idx] = total_sum;
-  }
+  push_back(T{});
 }
 
 template<class T>
@@ -974,9 +929,9 @@ void CumulativeHistogram<T>::pop_back() {
   if (empty()) {
     throw std::logic_error("CumulativeHistogram::pop_back(): there are no elements left to remove.");
   }
-  // Note that this works even if T is an unsigned type, thanks to modular arithmetic.
-  const T diff = static_cast<T>(T{} - elements_[size() - 1]);
-  increment(size() - 1, diff);
+  // TODO: find the deepest rightmost subtree. If we are removing the only element from that subtree,
+  // then we should destroy its *effective* root node.
+  // Currently, though, we don't construct/destroy nodes, so whatever.
   elements_.pop_back();
 }
 
@@ -988,34 +943,23 @@ void CumulativeHistogram<T>::resize(size_type num_elements) {
   }
   // Remove the last N-N' elements if N > N'.
   if (size() > num_elements) {
-    // TODO: replace with a decent implementation - this one is fucking terrible.
-    const size_type elements_to_remove = size() - num_elements;
-    for (size_type i = 0; i < elements_to_remove; ++i) {
-      pop_back();
-    }
+    // Lol, yes it works.
+    // TODO: destoy the nodes that are no longer needed. Currenlty this is not needed because
+    // we don't construct/destroy nodes manually.
+    elements_.resize(num_elements);
     return;
   }
   // Append N'-N elements if N < N'.
-  // Allocate new data if needed.
-  reserve(num_elements);
-  // Save the old index of the root. Note that if we're here, then
-  //   0 <= old_num_elements < new_num_elements <= capacity_
-  const size_type old_root_idx = getRootIndex();
-  // TODO: this won't work if pop_back() does't clean up after itself.
-  T total_sum {};
-  if (!empty()) {
-    total_sum = totalSum();
-  }
-  elements_.resize(num_elements);
-  // Compute the new index of the root.
-  const size_type root_idx = getRootIndex();
-  // If the root has changed, then we need to initialize the new nodes [root_idx_ - 1; old_root_idx - 1)
-  // with the total sum.
-  if (root_idx != old_root_idx) {
-    const auto iter_root_new = nodes_.begin() + root_idx;
-    const auto iter_root_old = nodes_.begin() + old_root_idx;
-    // TODO: this might be broken if there were no nodes initially.
-    std::fill(iter_root_new, iter_root_old, total_sum);
+  // TODO: reserve space for 2x more elements (or 4x or however much is needed),
+  // so that we don't have to rebuild the tree.
+  // Pros: resize will be slighly faster, because the tree can be copied instead of rebuilding.
+  // Cons: memory overhead if extra space will not be used.
+  // reserve(num_elements);
+  // TODO: I think a more efficient implementation is possible: basically buildTree(), which only
+  // updates new nodes.
+  const size_type elements_to_add = num_elements - size();
+  for (size_type i = 0; i < elements_to_add; ++i) {
+    push_back(T{});
   }
 }
 
@@ -1038,7 +982,7 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
   // Tree representing the elements [0; N).
   const size_type root_idx = getRootIndex();
   const std::span<T> nodes = std::span<T>{nodes_}.subspan(root_idx, numNodesCurrent());
-  TreeView<true> tree(nodes, 0, capacityCurrent() - 1);
+  TreeViewAdvanced<true> tree(nodes, size(), capacityCurrent());
   while (!tree.empty()) {
     // Check whether the element k is in the left or the right branch.
     if (k <= tree.pivot()) {
