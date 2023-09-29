@@ -236,6 +236,23 @@ TEST(CumulativeHistogram, PushBackZeroInitialized) {
   EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
+TEST(CumulativeHistogram, PushBackNonZero) {
+  constexpr std::array<unsigned int, 17> kElements =
+    { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17 };
+  CumulativeHistogram<unsigned int> histogram;
+  for (std::size_t i = 0; i < kElements.size(); ++i) {
+    histogram.push_back(kElements[i]);
+    const std::size_t new_size = i + 1;
+    EXPECT_EQ(histogram.size(), new_size);
+    // Check elements.
+    for (std::size_t j = 0; j < new_size; ++j) {
+      EXPECT_EQ(histogram.element(j), kElements[j]);
+    }
+    EXPECT_EQ(histogram.totalSum(), std::accumulate(kElements.begin(), kElements.begin() + new_size, 0u));
+    EXPECT_TRUE(CheckPrefixSums(histogram));
+  }
+}
+
 TEST(CumulativeHistogram, PopBack) {
   constexpr std::array<unsigned int, 10> kElements = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
   CumulativeHistogram<unsigned int> histogram{ kElements.begin(), kElements.end() };
