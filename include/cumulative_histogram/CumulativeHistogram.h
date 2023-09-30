@@ -89,6 +89,7 @@ class CumulativeHistogram {
 
   // Reserves memory for a histogram capable of storing the specified number of elements.
   // The values of existing elements remain unchanged.
+  // Throws std::length_error or whatever std::vector::reserve() throws on failure.
   // Time complexity: O(1) if num_elements <= this->capacity(),
   //                  otherwise O(N), where N is the current number of elements.
   void reserve(size_type num_elements);
@@ -819,33 +820,36 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
   elements_.reserve(num_elements);
   // Compute the minimum number of nodes in the tree that can represent `num_elements` elements.
   const std::size_t num_nodes_new = Detail_NS::countNodesInTree(num_elements);
-
+  // Construct the new tree.
+  std::vector<T> new_nodes;
   // Check the special case when the tree for num_elements has our current tree as a subtree.
   // In that case there's no need to rebuild the tree - we can just copy our current one.
   const std::size_t level_for_the_original =
     Detail_NS::findLeftmostSubtreeWithExactCapacity(capacity_current, num_elements);
   if (level_for_the_original == static_cast<std::size_t>(-1)) {
-    // Not a subtree - just zero-initialize the remaining data and rebuild the tree.
-    nodes_.clear();
+    // The old tree is not a subtree of the new tree, so we have to build the new one from scratch.
+    // Memory for the old tree is not deallocated here yet to ensure basic exception guarantee.
     // TODO: only construct nodes that are needed to represent the current level.
-    nodes_.resize(num_nodes_new);
-    buildTree(elements_, nodes_, num_elements);
+    new_nodes.resize(num_nodes_new);
+    buildTree(elements_, new_nodes, num_elements);
   } else {
-    std::vector<T> new_nodes;
     new_nodes.reserve(num_nodes_new);
     // 1) Zero-initialize reserved "root" nodes.
     new_nodes.insert(new_nodes.end(), level_for_the_original, T{});
     // 2) Just copy the current tree as a subtree of the new one.
     const size_type root_idx_old = getRootIndex();
     const size_type num_nodes_old = Detail_NS::countNodesInTree(capacity_current);
+    // TODO: this violates basic exception guarantee - if an exception is thrown here
+    // or later, `nodes_` may be left invalid.
+    // Still, I'd prefer to move the data if possible.
     new_nodes.insert(new_nodes.end(), std::make_move_iterator(nodes_.begin() + root_idx_old),
                                       std::make_move_iterator(nodes_.begin() + root_idx_old + num_nodes_old));
     // 3) Zero-initialize the remaining data.
     // TODO: don't.
     new_nodes.resize(num_nodes_new);
-    // 4) Replace old data with new data.
-    nodes_ = std::move(new_nodes);
   }
+  // Replace old data with new data.
+  nodes_ = std::move(new_nodes);
   capacity_ = num_elements;
 }
 
