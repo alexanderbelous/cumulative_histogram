@@ -11,24 +11,12 @@
 
 namespace CumulativeHistogram_NS {
 
-// This class allows to efficiently compute prefix sums for a dynamic array of elements
-// by offering a compromise between 2 naive solutions:
-// +----------------------+-----------------+-------------+--------------+-------+
-// | Solution             | updateElement() | prefixSum() | lowerBound() | Space |
-// +----------------------+-----------------+-------------+--------------+-------+
-// | Array of elements    | O(1)            | O(N)        | O(N)         | O(N)  |
-// +----------------------+-----------------+-------------+--------------+-------+
-// | Array of prefix sums | O(N)            | O(1)        | O(logN)      | O(N)  |
-// +----------------------+-----------------+-------------+--------------+-------+
-// | CumulativeHistogram  | O(logN)         | O(logN)     | O(logN)      | O(N)  |
-// +----------------------+-----------------+-------------+--------------+-------+
-//
-// Unlike a Fenwick tree, this class allows adding and removing elements.
-// The memory overhead is approximately 50% (i.e. the class stores roughly N/2 extra counters).
+// A class for efficient computation of prefix sums for a dynamic array of elements.
 template<class T>
 class CumulativeHistogram {
  public:
   using value_type = T;
+  // TODO: declare as `typename std::vector<T>::size_type`.
   using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
   using reference = const T&;
@@ -58,7 +46,7 @@ class CumulativeHistogram {
 
   // Constructs a cumulative histogram for the specified elements.
   // This overload only participates in overload resolution if Iter satisfies
-  // std::input_iterator concep, to avoid ambiguity with CumulativeHistogram(std::size_t, T).
+  // std::input_iterator concep, to avoid ambiguity with CumulativeHistogram(size_type, T).
   // Time complexity: O(N), where N is the distance between first and last.
   template<std::input_iterator Iter>
   CumulativeHistogram(Iter first, Iter last);
@@ -97,9 +85,6 @@ class CumulativeHistogram {
   // Erases all elements.
   // The capacity remains unchanged.
   // Time complexity: O(N).
-  // Note: time complexity is linear because we need to call the destructor for each element.
-  // For arithmetic types we could skip that, but T can be a class/struct (e.g., std::complex or some BigInt).
-  // TODO: consider customizing the behavior for trivial types.
   void clear() noexcept;
 
   // Add a zero-initialized element to the end.
@@ -161,7 +146,7 @@ class CumulativeHistogram {
   // However, it would unnecessarily affect performance in the use cases where the total sum is not needed
   // (or only needed rarely). Hence, I chose not to do it; if anything, it is very easy to write a wrapper
   // class that does it.
-  constexpr T totalSum() const;
+  T totalSum() const;
 
   // Find the first element, for which prefixSum() is not less than the specified value.
   // The behavior is undefined if any element is negative or if computing the total sum
@@ -215,7 +200,7 @@ class CumulativeHistogram {
   // Time complexity: O(elements.size())
   // TODO: change the API so that `nodes` is only required to have enough nodes to represent all elements.
   //       Or just pass const std::vector& and let buildTree() decide the optimal structure.
-  static void buildTree(std::span<const T> elements, std::span<T> nodes, std::size_t capacity);
+  static void buildTree(std::span<const T> elements, std::span<T> nodes, size_type capacity);
 
   // Initializes the nodes of the specified tree according to the values of the given elements.
   // \param elements - values of elements for which we want to track prefix sums.
@@ -587,7 +572,7 @@ private:
 };
 
 template<class T>
-void CumulativeHistogram<T>::buildTree(std::span<const T> elements, std::span<T> nodes, std::size_t capacity) {
+void CumulativeHistogram<T>::buildTree(std::span<const T> elements, std::span<T> nodes, size_type capacity) {
   if (elements.empty()) {
     return;
   }
@@ -1021,7 +1006,7 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
 }
 
 template<class T>
-constexpr T CumulativeHistogram<T>::totalSum() const {
+T CumulativeHistogram<T>::totalSum() const {
   if (empty()) {
     throw std::logic_error("CumulativeHistogram::totalSum(): the histogram is empty.");
   }
