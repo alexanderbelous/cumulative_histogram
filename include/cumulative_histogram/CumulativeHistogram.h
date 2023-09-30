@@ -1,8 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <bit>
 #include <cassert>
 #include <iterator>
+#include <memory>
 #include <stdexcept>
 #include <span>
 #include <type_traits>
@@ -32,6 +34,38 @@ class CumulativeHistogram {
   // Time complexity: O(1).
   constexpr CumulativeHistogram() noexcept = default;
 
+  // Copy constructor.
+  // Note that this->capacity() == other.size() after construction.
+  //
+  // Time complexity: O(N), where N = other.size().
+  constexpr CumulativeHistogram(const CumulativeHistogram& other);
+
+  // Move constructor.
+  // Note that the capacity of the constructed histogram is the same as what other.capacity() used to be.
+  // After this call `other` is in a valid state, but both its size and its capacity are 0.
+  //
+  // Time complexity: O(1).
+  constexpr CumulativeHistogram(CumulativeHistogram&& other) noexcept;
+
+  // Copy assignment operator.
+  // If this->capacity() >= other.size() before this call, then capacity remains the same.
+  // Otherwise, capacity becomes equal to other.size().
+  //
+  // Time complexity: O(N + M), where N == this->size(), M == other.size().
+  constexpr CumulativeHistogram& operator=(const CumulativeHistogram& other);
+
+  // Move assignment operator.
+  // After this call `other` is in a valid state, but both its size and its capacity are 0.
+  //
+  // Time complexity: O(N), where N == this->size() (because we need to destruct the currently
+  // stored elements).
+  constexpr CumulativeHistogram& operator=(CumulativeHistogram&& other)
+    noexcept(std::is_nothrow_move_assignable_v<std::vector<T>>);
+
+  // Destructor.
+  // Time complexity: O(N), where N == this->size().
+  constexpr ~CumulativeHistogram() = default;
+
   // Constructs a cumulative histogram for N zero-initialized elements.
   // Time complexity: O(N).
   explicit CumulativeHistogram(size_type num_elements);
@@ -41,12 +75,14 @@ class CumulativeHistogram {
   explicit CumulativeHistogram(size_type num_elements, const T& value);
 
   // Constructs a cumulative histogram for the specified elements.
+  // Note that this this->capacity() equals elements.size() after this call (not elements.capacity()).
+  //
   // Time complexity: O(N).
   explicit CumulativeHistogram(std::vector<T>&& elements);
 
   // Constructs a cumulative histogram for the specified elements.
   // This overload only participates in overload resolution if Iter satisfies
-  // std::input_iterator concep, to avoid ambiguity with CumulativeHistogram(size_type, T).
+  // std::input_iterator concept, to avoid ambiguity with CumulativeHistogram(size_type, T).
   // Time complexity: O(N), where N is the distance between first and last.
   template<std::input_iterator Iter>
   CumulativeHistogram(Iter first, Iter last);
@@ -218,7 +254,9 @@ class CumulativeHistogram {
   // Values of elements in the histogram.
   std::vector<T> elements_;
   // Nodes of the tree.
-  std::vector<T> nodes_;
+  // The number of nodes is always equal to Detail_NS::countNodesInTree(capacity_);
+  // TODO: only *construct* nodes that are needed to represent the currently effective tree.
+  std::unique_ptr<T[]> nodes_;
   // Current capacity Nmax.
   // Nmax <= elements_.capacity(). We store the capacity explicitly because we want to double it when
   // calling push_back() at full capacity (to avoid rebuilding the tree), but std::vector doesn't
@@ -714,13 +752,54 @@ constexpr std::size_t CumulativeHistogram<T>::numNodesCurrent() const noexcept {
 }
 
 template<class T>
-CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
-  elements_(num_elements)
+constexpr CumulativeHistogram<T>::CumulativeHistogram(const CumulativeHistogram& other):
+  CumulativeHistogram(other.begin(), other.end())
+{}
+
+template<class T>
+constexpr CumulativeHistogram<T>::CumulativeHistogram(CumulativeHistogram&& other) noexcept :
+  elements_(std::move(other.elements_)),
+  nodes_(std::move(other.nodes_)),
+  capacity_(std::exchange(other.capacity_, static_cast<size_type>(0)))
+{}
+
+template<class T>
+constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(const CumulativeHistogram& other)
 {
-  if (num_elements != 0) {
-    capacity_ = elements_.capacity();
-    // TODO: only construct nodes that are needed to represent the current level.
-    nodes_.resize(Detail_NS::countNodesInTree(capacity()));
+  if (capacity_ < other.size()) {
+    // Delegate to copy constructor and move assignment operator.
+    return *this = CumulativeHistogram(other);
+  }
+  // Our capacity is sufficient to store all elements from `other`, so no memory allocation is needed.
+  elements_.clear();
+  elements_.insert(elements_.end(), other.begin(), other.end());
+  const size_type num_nodes = Detail_NS::countNodesInTree(capacity_);
+  const std::span<T> nodes{ nodes_.get(), num_nodes };
+  buildTree(elements_, nodes, capacity_);
+  return *this;
+}
+
+template<class T>
+constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(CumulativeHistogram&& other)
+  noexcept(std::is_nothrow_move_assignable_v<std::vector<T>>)
+{
+  // This line might throw and exception.
+  elements_ = std::move(other.elements_);
+  // These lines cannot throw any exceptions.
+  nodes_ = std::move(other.nodes_);
+  capacity_ = std::exchange(other.capacity_, static_cast<size_type>(0));
+  return *this;
+}
+
+template<class T>
+CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
+  elements_(num_elements),
+  capacity_(num_elements)
+{
+  if (capacity_ != 0) {
+    const size_type num_nodes = Detail_NS::countNodesInTree(capacity_);
+    // Zero-initialize the nodes.
+    nodes_ = std::make_unique<T[]>(num_nodes);
   }
 }
 
@@ -732,16 +811,18 @@ CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements, const T& val
 
 template<class T>
 CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
-  elements_(std::move(elements))
+  elements_(std::move(elements)),
+  capacity_(elements_.size())
 {
   if (elements_.empty()) {
     return;
   }
-  // If the input vector already has reserved memory, let's use it.
-  capacity_ = elements_.capacity();
   // TODO: only construct nodes that are needed to represent the current level.
-  nodes_.resize(Detail_NS::countNodesInTree(capacity()));
-  buildTree(elements_, nodes_, capacity());
+  const size_type num_nodes = Detail_NS::countNodesInTree(capacity_);
+  // Default-initialize the nodes - there's no need to zero-initialize them.
+  nodes_ = std::make_unique_for_overwrite<T[]>(num_nodes);
+  const std::span<T> nodes{ nodes_.get(), num_nodes };
+  buildTree(elements_, nodes, capacity());
 }
 
 template<class T>
@@ -806,7 +887,8 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
   // Compute the minimum number of nodes in the tree that can represent `num_elements` elements.
   const std::size_t num_nodes_new = Detail_NS::countNodesInTree(num_elements);
   // Construct the new tree.
-  std::vector<T> new_nodes;
+  std::unique_ptr<T[]> new_nodes = std::make_unique_for_overwrite<T[]>(num_nodes_new);
+  const std::span<T> new_nodes_span {new_nodes.get(), num_nodes_new};
   // Check the special case when the tree for num_elements has our current tree as a subtree.
   // In that case there's no need to rebuild the tree - we can just copy our current one.
   const std::size_t level_for_the_original =
@@ -815,23 +897,19 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
     // The old tree is not a subtree of the new tree, so we have to build the new one from scratch.
     // Memory for the old tree is not deallocated here yet to ensure basic exception guarantee.
     // TODO: only construct nodes that are needed to represent the current level.
-    new_nodes.resize(num_nodes_new);
-    buildTree(elements_, new_nodes, num_elements);
+    buildTree(elements_, new_nodes_span, num_elements);
   } else {
-    new_nodes.reserve(num_nodes_new);
-    // 1) Zero-initialize reserved "root" nodes.
-    new_nodes.insert(new_nodes.end(), level_for_the_original, T{});
-    // 2) Just copy the current tree as a subtree of the new one.
+    // Just copy the current tree as a subtree of the new one.
     const size_type root_idx_old = getRootIndex();
     const size_type num_nodes_old = Detail_NS::countNodesInTree(capacity_current);
+    const std::span<T> effective_nodes_old { nodes_.get() + root_idx_old, num_nodes_old };
+    const std::span<T> effective_nodes_new = new_nodes_span.subspan(level_for_the_original, num_nodes_old);
     // TODO: this violates basic exception guarantee - if an exception is thrown here
     // or later, `nodes_` may be left invalid.
     // Still, I'd prefer to move the data if possible.
-    new_nodes.insert(new_nodes.end(), std::make_move_iterator(nodes_.begin() + root_idx_old),
-                                      std::make_move_iterator(nodes_.begin() + root_idx_old + num_nodes_old));
-    // 3) Zero-initialize the remaining data.
-    // TODO: don't.
-    new_nodes.resize(num_nodes_new);
+    std::copy_n(std::make_move_iterator(effective_nodes_old.begin()),
+                effective_nodes_old.size(),
+                effective_nodes_new.begin());
   }
   // Replace old data with new data.
   nodes_ = std::move(new_nodes);
@@ -841,14 +919,15 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
 template<class T>
 void CumulativeHistogram<T>::clear() noexcept {
   elements_.clear();
-  // TODO: call nodes_.clear() instead.
-  std::fill(nodes_.begin(), nodes_.end(), T{});
+  // TODO: destroy the nodes.
 }
 
 template<class T>
 void CumulativeHistogram<T>::setZero() {
   std::fill(elements_.begin(), elements_.end(), T{});
-  std::fill(nodes_.begin(), nodes_.end(), T{});
+  const std::span<T> nodes_current{ nodes_.get() + getRootIndex(), numNodesCurrent() };
+  // TODO: only fill the nodes that are actually used.
+  std::fill(nodes_current.begin(), nodes_current.end(), T{});
 }
 
 template<class T>
@@ -866,8 +945,9 @@ void CumulativeHistogram<T>::push_back(const T& value) {
 
   // There are 2 possibilities - either we can simply add the new element without constructing
   // any new nodes, or we need to extend some subtree by constructing a new root.
-  const std::span<const T> nodes = std::span<const T>{ nodes_ }.subspan(getRootIndex(), numNodesCurrent());
-  TreeViewAdvanced<false> tree { nodes, size(), capacityCurrent() };
+  const std::span<T> nodes = std::span<T>{ nodes_.get(), Detail_NS::countNodesInTree(capacity()) };
+  const std::span<const T> nodes_effective = nodes.subspan(getRootIndex(), numNodesCurrent());
+  TreeViewAdvanced<false> tree { nodes_effective, size(), capacityCurrent() };
   // TODO: get rid of this loop. Traversing the tree has O(logN) time complexity, but it can be avoided
   // if we store the path to the deepest rightmost subtree. In that case updating the path can be done in O(1).
   while (tree.numElements() != tree.capacity()) {
@@ -888,14 +968,14 @@ void CumulativeHistogram<T>::push_back(const T& value) {
   // *immediate* right subtree. We will construct a new root, whose left subtree will be the tree we've found, and
   // the right subtree will store the element that we are adding.
   // TreeViewAdvanced doesn't store the index of the root node, but it's easy to compute via pointer arithmetic.
-  const std::size_t tmp_root_idx = tree.nodes().data() - nodes_.data();
+  const std::size_t tmp_root_idx = tree.nodes().data() - nodes.data();
   const std::size_t root_idx_new = tmp_root_idx - 1;
   // Compute the sum of all elements in the effective right subtree.
   // This has O(logN) time complexity in the worst case, but, fortunately, the amortized time complexity is O(1).
   const std::span<const T> tmp_elements = std::span<const T>(elements_).subspan(tree.elementFirst(), tree.numElements());
   TreeView<false> tmp_tree(tree.nodes(), 0, tree.capacity() - 1);
   // Construct the new node.
-  nodes_[root_idx_new] = sumElementsOfFullTree(tmp_elements, tmp_tree);
+  nodes[root_idx_new] = sumElementsOfFullTree(tmp_elements, tmp_tree);
   // The new element is added to the right subtree of the newly constructed tree. This subtree doesn't
   // have any nodes yet, because it only represents 1 element.
   elements_.push_back(value);
@@ -958,7 +1038,7 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
   }
   // Tree representing the elements [0; N).
   const size_type root_idx = getRootIndex();
-  const std::span<T> nodes = std::span<T>{nodes_}.subspan(root_idx, numNodesCurrent());
+  const std::span<T> nodes = std::span<T>{ nodes_.get() + root_idx, numNodesCurrent() };
   TreeViewAdvanced<true> tree(nodes, size(), capacityCurrent());
   while (!tree.empty()) {
     // Check whether the element k is in the left or the right branch.
@@ -986,7 +1066,7 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
   T result {};
   // Tree representing the elements [0; N).
   const size_type root_idx = getRootIndex();
-  const std::span<const T> nodes = std::span<const T>{nodes_}.subspan(root_idx, numNodesCurrent());
+  const std::span<const T> nodes = std::span<const T>{ nodes_.get() + root_idx, numNodesCurrent() };
   TreeViewAdvanced<false> tree(nodes, size(), capacityCurrent());
   while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [first; middle].
@@ -1012,7 +1092,7 @@ T CumulativeHistogram<T>::totalSum() const {
   }
   T result {};
   const size_type root_idx = getRootIndex();
-  const std::span<const T> nodes = std::span<const T>{nodes_}.subspan(root_idx, numNodesCurrent());
+  const std::span<const T> nodes = std::span<const T>{ nodes_.get() + root_idx, numNodesCurrent() };
   TreeViewAdvanced<false> tree(nodes, size(), capacityCurrent());
   while (!tree.empty()) {
     result += tree.root();
@@ -1038,7 +1118,7 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value, Compare cmp) const {
   T prefix_sum_upper {};
   // Tree representing the elements [k_lower; k_upper] = [0; N-1].
   const size_type root_idx = getRootIndex();
-  const std::span<const T> nodes = std::span<const T>{ nodes_ }.subspan(root_idx, numNodesCurrent());
+  const std::span<const T> nodes = std::span<const T>{ nodes_.get() + root_idx, numNodesCurrent() };
   TreeViewAdvanced<false> tree(nodes, size(), capacityCurrent());
   while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [k_lower; middle].
