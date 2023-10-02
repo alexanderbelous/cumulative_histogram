@@ -396,13 +396,22 @@ namespace Detail_NS {
   //                function returns `num_elements`.
   // Time complexity: O(1).
   constexpr std::size_t countElementsInLeftmostSubtree(std::size_t num_elements, std::size_t level) noexcept {
-    // f(0) = N
-    // f(1) = ceil(f(0)/2) = (N+1)/2
-    // f(2) = ceil(f(1)/2) = ((N+1)/2 + 1)/2 = (N+3)/4 = ceil(N/4)
-    // f(3) = ceil(f(2)/2) = ((N+3)/4 + 1)/2 = (N+7)/8 = ceil(N/8)
-    // f(k) = ceil(N/2^k) = (N + 2^k - 1) / 2^k
-    return (num_elements + (static_cast<std::size_t>(1) << level) - 1) >> level;
-    // TODO: fix the overflow case.
+    // First, note that h(x) = ceil(ceil(x/2)/2) = ceil(x/4). Proof:
+    //   h(4a) = a
+    //   h(4a+1) = ceil(ceil((4a+1)/2)/2) = ceil((2a+1)/2) = a+1
+    //   h(4a+2) = ceil(ceil((4a+2)/2)/2) = ceil((2a+1)/2) = a+1
+    //   h(4a+3) = ceil(ceil((4a+3)/2)/2) = ceil((2a+2)/2) = a+1
+    //
+    // The number of nodes in the leftmost subtree is computed as:
+    //   f(0) = N = ceil(N/1)
+    //   f(1) = ceil(f(0)/2) = ceil(N/2)
+    //   f(2) = ceil(f(1)/2) = ceil(ceil(N/2)/2) = ceil(N/4)
+    //   f(3) = ceil(f(2)/2) = ceil(ceil(N/4)/2) = ceil(N/8)
+    //   f(k) = ceil(N/2^k)
+    const std::size_t mask = (static_cast<std::size_t>(1) << level) - 1;
+    const std::size_t floored_result = num_elements >> level;
+    const std::size_t remainder = num_elements & mask;
+    return floored_result + (remainder != 0);
   }
 
   // Finds the deepest node containing all of the given elements in the tree with the specified capacity.

@@ -1,7 +1,9 @@
 #include <cumulative_histogram/CumulativeHistogram.h>
 
 #include <array>
+#include <cmath>
 #include <complex>
+#include <limits>
 #include <numeric>
 #include <sstream>
 #include <gtest/gtest.h>
@@ -70,7 +72,83 @@ testing::AssertionResult CheckUpperBound(const CumulativeHistogram<T>& histogram
   return testing::AssertionSuccess();
 }
 
+TEST(CumulativeHistogram, floorLog2) {
+  using Detail_NS::floorLog2;
+  for (std::size_t i = 1; i <= 128; ++i) {
+    EXPECT_EQ(floorLog2(i), static_cast<std::size_t>(std::floor(std::log2(static_cast<double>(i)))));
+  }
+  // The standard guaraneets that std::size_t is at least 16 bits
+  EXPECT_EQ(floorLog2(65535), 15);
+  // Check the maximum value ((2^N) - 1).
+  EXPECT_EQ(floorLog2(std::numeric_limits<std::size_t>::max()),
+            std::numeric_limits<std::size_t>::digits - 1);
+}
 
+TEST(CumulativeHistogram, ceilLog2) {
+  using Detail_NS::ceilLog2;
+  for (std::size_t i = 1; i <= 128; ++i) {
+    EXPECT_EQ(ceilLog2(i), static_cast<std::size_t>(std::ceil(std::log2(static_cast<double>(i)))));
+  }
+  // The standard guaraneets that std::size_t is at least 16 bits
+  EXPECT_EQ(ceilLog2(65535), 16);
+  // Check the maximum value ((2^N) - 1).
+  EXPECT_EQ(ceilLog2(std::numeric_limits<std::size_t>::max()),
+    std::numeric_limits<std::size_t>::digits);
+}
+
+// Slow implementation of countNodesInTree() just for testing.
+std::size_t countNodesInTreeForTesting(std::size_t num_elements) noexcept {
+  // // This is awfully slow for large integers.
+  // const std::size_t num_elements_right = num_elements / 2;                  // floor(num_elements / 2);
+  // const std::size_t num_elements_left = num_elements - num_elements_right;  // ceil(num_elements / 2);
+  // return 1 + countNodesInTreeNaive(num_elements_left) + countNodesInTreeNaive(num_elements_right);
+
+  std::size_t num_nodes = 0;
+  // No nodes if there are less than 3 elements.
+  while (num_elements >= 3) {
+    const std::size_t num_elements_right = num_elements / 2; // floor(num_elements / 2);
+    const std::size_t num_elements_left = num_elements - num_elements_right;  // ceil(num_elements / 2);
+    if (num_elements_left == num_elements_right) {
+      return num_nodes + (1 + 2 * countNodesInTreeForTesting(num_elements_right));
+    } else {
+      num_nodes += (1 + countNodesInTreeForTesting(num_elements_right));
+      num_elements = num_elements_left;
+    }
+  }
+  return num_nodes;
+}
+
+TEST(CumulativeHistogram, countNodesInTree) {
+  using Detail_NS::countNodesInTree;
+  for (std::size_t i = 1; i <= 1024; ++i) {
+    EXPECT_EQ(countNodesInTree(i), countNodesInTreeForTesting(i));
+  }
+  EXPECT_EQ(countNodesInTree(65535), countNodesInTreeForTesting(65535));
+  // Check the maximum value ((2^N) - 1).
+  constexpr std::size_t n_max = std::numeric_limits<std::size_t>::max();
+  EXPECT_EQ(countNodesInTree(n_max), countNodesInTreeForTesting(n_max));
+}
+
+TEST(CumulativeHistogram, countElementsInLeftmostSubtree) {
+  using Detail_NS::countElementsInLeftmostSubtree;
+  // Check all valid levels for N from [0; 1024]
+  for (std::size_t num_elements = 0; num_elements <= 1024; ++num_elements) {
+    const std::size_t tree_height = Detail_NS::heightOfFullTree(num_elements);
+    std::size_t expected_num_elements_at_level = num_elements;
+    for (std::size_t level = 0; level < tree_height; ++level) {
+      EXPECT_EQ(countElementsInLeftmostSubtree(num_elements, level), expected_num_elements_at_level);
+      const std::size_t num_elements_right = expected_num_elements_at_level / 2; // floor(N/2);
+      const std::size_t num_elements_left = expected_num_elements_at_level - num_elements_right; // ceil(N/2)
+      expected_num_elements_at_level = num_elements_left;
+    }
+  }
+  // Check that overflow doesn't happen.
+  constexpr std::size_t n_max = std::numeric_limits<std::size_t>::max();
+  EXPECT_EQ(countElementsInLeftmostSubtree(n_max, 0), n_max);
+  EXPECT_EQ(countElementsInLeftmostSubtree(n_max, 1), (n_max / 2) + (n_max % 2 != 0));
+  EXPECT_EQ(countElementsInLeftmostSubtree(n_max, 2), (n_max / 4) + (n_max % 4 != 0));
+
+}
 
 TEST(CumulativeHistogram, DefaultConstructor) {
   CumulativeHistogram<int> histogram;
