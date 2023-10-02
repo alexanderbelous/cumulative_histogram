@@ -387,6 +387,7 @@ namespace Detail_NS {
     }
     // f(N) = 2 - h(N - 2) is even if h(N-2) == 0, and odd if h(N-2) = 1.
     return floorLog2(4 * num_elements / 3) == floorLog2(num_elements);
+    // TODO: fix the overflow case.
   }
 
   // Returns the number of elements represented by the leftmost subtree with root at the specified level.
@@ -401,6 +402,7 @@ namespace Detail_NS {
     // f(3) = ceil(f(2)/2) = ((N+3)/4 + 1)/2 = (N+7)/8 = ceil(N/8)
     // f(k) = ceil(N/2^k) = (N + 2^k - 1) / 2^k
     return (num_elements + (static_cast<std::size_t>(1) << level) - 1) >> level;
+    // TODO: fix the overflow case.
   }
 
   // Finds the deepest node containing all of the given elements in the tree with the specified capacity.
@@ -447,6 +449,7 @@ namespace Detail_NS {
     if (capacity < 2) return 0;
     if (num_elements < 2) num_elements = 2;
     // Note that ceil(log2(x)) = ceil(log2(ceil(x)).
+    // TODO: fix the overflow case.
     const std::size_t ratio = (capacity + num_elements - 2) / (num_elements - 1);  // ceil(Nmax/(N-1))
     return ceilLog2(ratio) - 1;
   }
