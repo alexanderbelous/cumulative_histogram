@@ -954,10 +954,27 @@ void CumulativeHistogram<T>::clear() noexcept {
 
 template<class T>
 void CumulativeHistogram<T>::setZero() {
-  std::fill(elements_.begin(), elements_.end(), T{});
-  const std::span<T> nodes_current{ nodes_.get() + getRootIndex(), numNodesCurrent() };
-  // TODO: only fill the nodes that are actually used.
-  std::fill(nodes_current.begin(), nodes_current.end(), T{});
+  const T zero {};
+  std::fill(elements_.begin(), elements_.end(), zero);
+  // Zero-out the active nodes.
+  Detail_NS::TreeView<T> tree(
+    std::span<T> { nodes_.get() + getRootIndex(), numNodesCurrent() },
+    size(), capacityCurrent());
+  while (!tree.empty()) {
+    const std::span<T> nodes = tree.nodes();
+    // Shortcut: if the current tree is at full capacity, just zero-out all
+    // of its nodes and return.
+    if (tree.numElements() == tree.capacity()) {
+      std::fill_n(nodes.data(), nodes.size(), zero);
+      return;
+    }
+    // The left subtree is always full, therefore all its nodes are active.
+    const std::size_t num_nodes_left = tree.leftChild().nodes().size();
+    // Zero-initialize the root and the nodes of the left subtree.
+    std::fill_n(nodes.data(), 1 + num_nodes_left, zero);
+    // Switch to the effective right subtree.
+    tree = tree.rightChild();
+  }
 }
 
 template<class T>
