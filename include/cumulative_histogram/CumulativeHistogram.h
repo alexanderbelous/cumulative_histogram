@@ -116,7 +116,7 @@ class CumulativeHistogram {
   // If reallocation takes place (i.e. if `this->capacity() < num_elements` before the call),
   // all references and iterators are invalidated.
   // Throws std::length_error or whatever std::vector::reserve() throws on failure.
-  // If an exception is thrown, the object remains in a valid state (basic exception guarantee).
+  // If an exception is thrown, this function has no effect (strong exception guarantee).
   // Time complexity: O(1) if num_elements <= this->capacity(),
   //                  otherwise O(N), where N is the current number of elements.
   void reserve(size_type num_elements);
@@ -897,24 +897,24 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
   if (num_elements <= capacity()) {
     return;
   }
-  // Get the capacity of the currently effective tree.
-  const size_type capacity_current = capacityCurrent();
-  // Reserve new data for elements.
-  elements_.reserve(num_elements);
   // Compute the minimum number of nodes in the tree that can represent `num_elements` elements.
   const std::size_t num_nodes_new = Detail_NS::countNodesInTree(num_elements);
-  // Construct the new tree.
+  // Allocate memory for the new tree.
+  // TODO: only construct the nodes that are needed to represent the current level.
   std::unique_ptr<T[]> new_nodes = std::make_unique_for_overwrite<T[]>(num_nodes_new);
-  const std::span<T> new_nodes_span {new_nodes.get(), num_nodes_new};
+  const std::span<T> new_nodes_span{ new_nodes.get(), num_nodes_new };
+  // Get the capacity of the currently effective tree.
+  const size_type capacity_current = capacityCurrent();
   // Check the special case when the tree for num_elements has our current tree as a subtree.
   // In that case there's no need to rebuild the tree - we can just copy our current one.
   const std::size_t level_for_the_original =
     Detail_NS::findLeftmostSubtreeWithExactCapacity(capacity_current, num_elements);
+  // Construct the new tree.
   if (level_for_the_original == static_cast<std::size_t>(-1)) {
     // The old tree is not a subtree of the new tree, so we have to build the new one from scratch.
-    // Memory for the old tree is not deallocated here yet to ensure basic exception guarantee.
-    // TODO: only construct nodes that are needed to represent the current level.
     Detail_NS::buildTree<T>(elements_, new_nodes_span, num_elements);
+    // Reserve new data for elements.
+    elements_.reserve(num_elements);
   } else {
     // Just copy the current tree as a subtree of the new one.
     const size_type root_idx_old = getRootIndex();
@@ -927,11 +927,18 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
     // TODO: replace the condition with std::std::is_nothrow_constructible_v after implementing
     // lifetimes for nodes.
     if constexpr (std::is_nothrow_move_assignable_v<T>) {
+      // Memory is reserved before we move the nodes to ensure strong exception guarantee:
+      // std::vector::reserve() may throw an exception, but std::copy_n() cannot.
+      elements_.reserve(num_elements);
       std::copy_n(std::make_move_iterator(effective_nodes_old.begin()), effective_nodes_old.size(),
                   effective_nodes_new.begin());
     } else {
       std::copy_n(effective_nodes_old.cbegin(), effective_nodes_old.size(),
                   effective_nodes_new.begin());
+      // std::vector::reserve() happens after we copy the tree to ensure strong exception guarantee:
+      // copying the tree doesn't modify *this, and std::vector::reserve() itself won't modify
+      // `elements_` if an exception is thrown.
+      elements_.reserve(num_elements);
     }
   }
   // Replace old data with new data.
