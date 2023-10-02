@@ -224,15 +224,12 @@ class CumulativeHistogram {
   std::pair<const_iterator, T> lowerBoundImpl(const T& value, Compare cmp) const;
 
   template<bool Mutable>
-  class TreeView;
-
-  template<bool Mutable>
   class TreeViewAdvanced;
 
   // Builds the tree for the given elements.
   // Expects that:
   // 1) 0 <= elements.size() <= capacity
-  // 2) nodes.size() == 1 + countNodesInTree(capacity)
+  // 2) nodes.size() == countNodesInTree(capacity)
   // Time complexity: O(elements.size())
   // TODO: change the API so that `nodes` is only required to have enough nodes to represent all elements.
   //       Or just pass const std::vector& and let buildTree() decide the optimal structure.
@@ -249,7 +246,7 @@ class CumulativeHistogram {
   static constexpr T sumElementsOfEmptyTree(std::span<const T> elements, const TreeViewAdvanced<false>& tree);
 
   // This function is intended to be called for trees at their full capacity.
-  static constexpr T sumElementsOfFullTree(std::span<const T> elements, TreeView<false> tree);
+  static constexpr T sumElementsOfFullTree(std::span<const T> elements, std::span<const T> nodes);
 
   // Values of elements in the histogram.
   std::vector<T> elements_;
@@ -315,69 +312,6 @@ class CumulativeHistogram {
 // represent all current elements *is* the tree. This way we ensure that the time complexity of the
 // operations is actually O(logN), and not O(logNmax), where N is the number of elements and
 // Nmax is capacity.
-template<class T>
-template<bool Mutable>
-class CumulativeHistogram<T>::TreeView {
-public:
-  using value_type = std::conditional_t<Mutable, T, const T>;
-  using reference = value_type&;
-
-  constexpr TreeView(std::span<value_type> nodes,
-                     std::size_t element_first,
-                     std::size_t element_last) noexcept :
-    nodes_(nodes),
-    element_first_(element_first),
-    element_last_(element_last)
-  {}
-
-  // Converting constructor for an immutable TreeView from a mutable TreeView.
-  template<class Enable = std::enable_if_t<!Mutable>>
-  constexpr TreeView(const TreeView<!Mutable>& tree) noexcept :
-    nodes_(tree.nodes()),
-    element_first_(tree.elementFirst()),
-    element_last_(tree.elementLast())
-  {}
-
-  constexpr std::size_t elementFirst() const noexcept {
-    return element_first_;
-  }
-
-  constexpr std::size_t elementLast() const noexcept {
-    return element_last_;
-  }
-
-  constexpr bool empty() const noexcept {
-    return nodes_.empty();
-  }
-
-  constexpr std::span<value_type> nodes() const noexcept {
-    return nodes_;
-  }
-
-  constexpr std::size_t pivot() const noexcept {
-    return element_first_ + (element_last_ - element_first_) / 2;
-  }
-
-  constexpr reference root() const {
-    return nodes_.front();
-  }
-
-  constexpr TreeView leftChild() const noexcept {
-    const std::size_t num_nodes_left = nodes_.size() / 2;
-    return TreeView(nodes_.subspan(1, num_nodes_left), element_first_, pivot());
-  }
-
-  constexpr TreeView rightChild() const noexcept {
-    const std::size_t num_nodes_left = nodes_.size() / 2;
-    const std::size_t num_nodes_right = (nodes_.size() - 1) / 2;
-    return TreeView(nodes_.subspan(1 + num_nodes_left, num_nodes_right), pivot() + 1, element_last_);
-  }
-
-private:
-  std::span<value_type> nodes_;
-  std::size_t element_first_;
-  std::size_t element_last_;
-};
 
 namespace Detail_NS {
 
@@ -697,15 +631,16 @@ constexpr T CumulativeHistogram<T>::sumElementsOfEmptyTree(std::span<const T> el
 
 template<class T>
 constexpr T CumulativeHistogram<T>::sumElementsOfFullTree(std::span<const T> elements,
-                                                          TreeView<false> tree) {
+                                                          std::span<const T> nodes) {
+  assert(!elements.empty());
+  assert(nodes.size() == Detail_NS::countNodesInTree(elements.size()));
   const size_type num_elements = elements.size();
   const size_type path_length_to_rightmost_node = Detail_NS::countNodesToRightmostNode(num_elements);
-  const std::span<const T> nodes = tree.nodes();
   const T* node = nodes.data();
   size_type num_nodes = nodes.size();
-  assert(num_elements != 0);
-  assert(num_nodes == Detail_NS::countNodesInTree(num_elements));
   T result{};
+  // The loop is equivalent to `while (num_nodes != 0)`, but we can count the
+  // number of iterations in O(1).
   for (size_type depth = 0; depth < path_length_to_rightmost_node; ++depth) {
     result += *node;
     // Switch to the right subtree.
@@ -721,19 +656,6 @@ constexpr T CumulativeHistogram<T>::sumElementsOfFullTree(std::span<const T> ele
   }
   result += elements[num_elements - 1];
   return result;
-
-  //T result{};
-  //while (!tree.empty()) {
-  //  result += tree.root();
-  //  tree = tree.rightChild();
-  //}
-  //const std::size_t element_first = tree.elementFirst();
-  //const std::size_t element_last = tree.elementLast();
-  //result += elements[element_first];
-  //if (element_first != element_last) {
-  //  result += elements[element_last];
-  //}
-  //return result;
 }
 
 template<class T>
@@ -791,7 +713,7 @@ T CumulativeHistogram<T>::buildTreeImpl(std::span<const T> elements, const TreeV
 
   // Tail recursion optimization
   /*
-  TreeView<true> t = tree;
+  TreeViewAdvanced<true> t = tree;
   T total_sum {};
   while (!t.empty()) {
     const T total_sum_left = buildTreeImpl(elements, t.leftChild());
@@ -1057,9 +979,8 @@ void CumulativeHistogram<T>::push_back(const T& value) {
   // Compute the sum of all elements in the effective right subtree.
   // This has O(logN) time complexity in the worst case, but, fortunately, the amortized time complexity is O(1).
   const std::span<const T> tmp_elements = std::span<const T>(elements_).subspan(tree.elementFirst(), tree.numElements());
-  TreeView<false> tmp_tree(tree.nodes(), 0, tree.capacity() - 1);
   // Construct the new node.
-  nodes[root_idx_new] = sumElementsOfFullTree(tmp_elements, tmp_tree);
+  nodes[root_idx_new] = sumElementsOfFullTree(tmp_elements, tree.nodes());
   // The new element is added to the right subtree of the newly constructed tree. This subtree doesn't
   // have any nodes yet, because it only represents 1 element.
   elements_.push_back(value);
