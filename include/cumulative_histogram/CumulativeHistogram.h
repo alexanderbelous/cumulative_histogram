@@ -113,7 +113,10 @@ class CumulativeHistogram {
 
   // Reserves memory for a histogram capable of storing the specified number of elements.
   // The values of existing elements remain unchanged.
+  // If reallocation takes place (i.e. if `this->capacity() < num_elements` before the call),
+  // all references and iterators are invalidated.
   // Throws std::length_error or whatever std::vector::reserve() throws on failure.
+  // If an exception is thrown, the object remains in a valid state (basic exception guarantee).
   // Time complexity: O(1) if num_elements <= this->capacity(),
   //                  otherwise O(N), where N is the current number of elements.
   void reserve(size_type num_elements);
@@ -164,6 +167,7 @@ class CumulativeHistogram {
   // Increment the specified element.
   // Throws std::out_of_range if k >= size().
   // Time complexity: O(log(N)).
+  // TODO: remove the default value.
   void increment(size_type k, const T& value = 1);
 
   // Returns the k-th prefix sum of the stored elements.
@@ -357,7 +361,7 @@ namespace Detail_NS {
   // \param num_elements - the total number of elements represented by the tree.
   // Time complexity: O(1).
   constexpr bool rightmostNodeHasEvenNumberOfElements(std::size_t num_elements) noexcept {
-    // Any leaft node represents either 3 or 4 elements, and its left branch always represents 2 elements.
+    // Any leaf node represents either 3 or 4 elements, and its left branch always represents 2 elements.
     // Therefore, the rightmost node of the full tree represents an even number of elements (4) if
     // its right branch represents 2 elements, or an odd number of elements (3) if its right branch
     // represents just 1 element.
@@ -917,12 +921,18 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
     const size_type num_nodes_old = Detail_NS::countNodesInTree(capacity_current);
     const std::span<T> effective_nodes_old { nodes_.get() + root_idx_old, num_nodes_old };
     const std::span<T> effective_nodes_new = new_nodes_span.subspan(level_for_the_original, num_nodes_old);
-    // TODO: this violates basic exception guarantee - if an exception is thrown here
-    // or later, `nodes_` may be left invalid.
-    // Still, I'd prefer to move the data if possible.
-    std::copy_n(std::make_move_iterator(effective_nodes_old.begin()),
-                effective_nodes_old.size(),
-                effective_nodes_new.begin());
+    // Basic exception guarantee: we only move the nodes if T's move assignment is noexcept;
+    // otherwise, we copy them, so that even if an exception is thrown during copying, this class
+    // will remain in a valid state.
+    // TODO: replace the condition with std::std::is_nothrow_constructible_v after implementing
+    // lifetimes for nodes.
+    if constexpr (std::is_nothrow_move_assignable_v<T>) {
+      std::copy_n(std::make_move_iterator(effective_nodes_old.begin()), effective_nodes_old.size(),
+                  effective_nodes_new.begin());
+    } else {
+      std::copy_n(effective_nodes_old.cbegin(), effective_nodes_old.size(),
+                  effective_nodes_new.begin());
+    }
   }
   // Replace old data with new data.
   nodes_ = std::move(new_nodes);
