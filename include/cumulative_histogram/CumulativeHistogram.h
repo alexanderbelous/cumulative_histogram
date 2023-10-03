@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <cassert>
+#include <concepts>
 #include <iterator>
 #include <memory>
 #include <stdexcept>
@@ -13,8 +14,50 @@
 
 namespace CumulativeHistogram_NS {
 
+// Defines a named requirement for an additive type.
+//
+// This is similar to an additive group in mathematics, except that this concept
+// doesn't require every element to have an inverse element (e.g., arbitrary-precision
+// unsigned integers satisfy this requirement, even though they don't have negative
+// counterparts).
+template<typename T>
+concept Additive =
+  // T should be a semiregular type
+  // (i.e. T must be both copyable and default constructible).
+  std::semiregular<T> &&
+  // Given an rvalue `lhs` of type `T&&` an lvalue `rhs` of type `const T&`,
+  // the expression `std::move(lhs) + rhs` must be convertible to `T`.
+  requires(T&& lhs, const T& rhs) { { std::move(lhs) + rhs } -> std::convertible_to<T>; } &&
+  // Given an lvalue `lhs` of type `const T&` an lvalue `rhs` of type `const T&`,
+  // the expression `lhs + rhs` must be convertible to `T`.
+  requires(const T& lhs, const T& rhs) { { lhs + rhs } -> std::convertible_to<T>; } &&
+  // Given an lvalue `lhs` of type `T&` an lvalue `rhs` of type `const T&`,
+  // the expression `lhs += rhs` must be valid.
+  requires(T& lhs, const T& rhs) { lhs += rhs; };
+
 // A class for efficient computation of prefix sums for a dynamic array of elements.
-template<class T>
+//
+// The template type parameter T must satisfy the `Additive` concept above. There are additional
+// requirements that cannot be expressed via C++ concepts:
+// 1) Addition must be commutative, i.e. `a + b == b + a` for any a and b.
+// 2) Addition must be associative, i.e. `(a + b) + c == a + (b + c)` for any a, b, c.
+// 3) A default-constructed value-initialized object must have the same meaning as the identity element in
+//    additive groups ("zero"): `T{} + x == x` for any x.
+//
+// * Unsigned integer types satisfy these requirements.
+// * Signed integer satisfy these requirements (but note that signed integer overflow is undefined behavior).
+// * Floating-point types satisfy all the requirements except that addition is not associative: due to
+//   finite precision it's not guaranteed that `(a + b) + c == a + (b + c)` for floating-point values
+//   a, b, c. Therefore, computing a prefix sum for a sequence of floating-point values may produce
+//   different results depending on the order of operands. You can still use CumulativeHistogram with
+//   floating-point types, but note that it doesn't attempt to minimize rounding errors. If you need better
+//   precision guarantees, use algorithms like Kahan summation or pairwise summation.
+// * std::complex and std::chrono::duration satisfy these requirements (except that they have the same issue
+//   with rounding errors when using floating-point versions).
+// * User-defined classes for arbitrary-precision integers, N-dimensional vectors, quaternions, etc satisfy
+//   these requirements (as long as they overload operator+ and operator+=).
+// * std::string does NOT satisfy these requirements because string concatenation is not commutative.
+template<Additive T>
 class CumulativeHistogram {
  public:
   using value_type = T;
@@ -745,14 +788,14 @@ namespace Detail_NS {
 
 }  // namespace Detail_NS
 
-template<class T>
+template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::size_type
 CumulativeHistogram<T>::getRootIndex() const noexcept {
   return Detail_NS::findDeepestNodeForElements(size(), capacity());
 }
 
-template<class T>
+template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::size_type
 CumulativeHistogram<T>::capacityCurrent() const noexcept {
@@ -763,24 +806,24 @@ CumulativeHistogram<T>::capacityCurrent() const noexcept {
   return Detail_NS::countElementsInLeftmostSubtree(capacity(), level);
 }
 
-template<class T>
+template<Additive T>
 constexpr std::size_t CumulativeHistogram<T>::numNodesCurrent() const noexcept {
   return Detail_NS::countNodesInTree(capacityCurrent());
 }
 
-template<class T>
+template<Additive T>
 constexpr CumulativeHistogram<T>::CumulativeHistogram(const CumulativeHistogram& other):
   CumulativeHistogram(other.begin(), other.end())
 {}
 
-template<class T>
+template<Additive T>
 constexpr CumulativeHistogram<T>::CumulativeHistogram(CumulativeHistogram&& other) noexcept :
   elements_(std::move(other.elements_)),
   nodes_(std::move(other.nodes_)),
   capacity_(std::exchange(other.capacity_, static_cast<size_type>(0)))
 {}
 
-template<class T>
+template<Additive T>
 constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(const CumulativeHistogram& other)
 {
   if (capacity_ < other.size()) {
@@ -796,7 +839,7 @@ constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(const Cumula
   return *this;
 }
 
-template<class T>
+template<Additive T>
 constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(CumulativeHistogram&& other)
   noexcept(std::is_nothrow_move_assignable_v<std::vector<T>>)
 {
@@ -808,7 +851,7 @@ constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(CumulativeHi
   return *this;
 }
 
-template<class T>
+template<Additive T>
 CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
   elements_(num_elements),
   capacity_(num_elements)
@@ -820,13 +863,13 @@ CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
   }
 }
 
-template<class T>
+template<Additive T>
 CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements, const T& value):
   CumulativeHistogram(std::vector<T>(num_elements, value))
 {
 }
 
-template<class T>
+template<Additive T>
 CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
   elements_(std::move(elements)),
   capacity_(elements_.size())
@@ -842,57 +885,57 @@ CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
   Detail_NS::buildTree<T>(elements_, nodes, capacity());
 }
 
-template<class T>
+template<Additive T>
 template<std::input_iterator Iter>
 CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last):
   CumulativeHistogram(std::vector<T>(first, last))
 {
 }
 
-template<class T>
+template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::begin() const noexcept {
   return elements_.data();
 }
 
-template<class T>
+template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::end() const noexcept {
   return elements_.data() + size();
 }
 
-template<class T>
+template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::const_reverse_iterator CumulativeHistogram<T>::rbegin() const noexcept {
   return std::make_reverse_iterator(end());
 }
 
-template<class T>
+template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::const_reverse_iterator CumulativeHistogram<T>::rend() const noexcept {
   return std::make_reverse_iterator(begin());
 }
 
-template<class T>
+template<Additive T>
 constexpr bool CumulativeHistogram<T>::empty() const noexcept {
   return elements_.empty();
 }
 
-template<class T>
+template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::size_type
 CumulativeHistogram<T>::size() const noexcept {
   return elements_.size();
 }
 
-template<class T>
+template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::size_type
 CumulativeHistogram<T>::capacity() const noexcept {
   return capacity_;
 }
 
-template<class T>
+template<Additive T>
 void CumulativeHistogram<T>::reserve(size_type num_elements) {
   if (num_elements <= capacity()) {
     return;
@@ -946,13 +989,13 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
   capacity_ = num_elements;
 }
 
-template<class T>
+template<Additive T>
 void CumulativeHistogram<T>::clear() noexcept {
   elements_.clear();
   // TODO: destroy the nodes.
 }
 
-template<class T>
+template<Additive T>
 void CumulativeHistogram<T>::setZero() {
   const T zero {};
   std::fill(elements_.begin(), elements_.end(), zero);
@@ -977,12 +1020,12 @@ void CumulativeHistogram<T>::setZero() {
   }
 }
 
-template<class T>
+template<Additive T>
 void CumulativeHistogram<T>::push_back() {
   push_back(T{});
 }
 
-template<class T>
+template<Additive T>
 void CumulativeHistogram<T>::push_back(const T& value) {
   // Double the capacity if needed.
   if (size() == capacity()) {
@@ -1027,7 +1070,7 @@ void CumulativeHistogram<T>::push_back(const T& value) {
   elements_.push_back(value);
 }
 
-template<class T>
+template<Additive T>
 void CumulativeHistogram<T>::pop_back() {
   if (empty()) {
     throw std::logic_error("CumulativeHistogram::pop_back(): there are no elements left to remove.");
@@ -1038,7 +1081,7 @@ void CumulativeHistogram<T>::pop_back() {
   elements_.pop_back();
 }
 
-template<class T>
+template<Additive T>
 void CumulativeHistogram<T>::resize(size_type num_elements) {
   // Do nothing if N == N'
   if (size() == num_elements) {
@@ -1066,18 +1109,18 @@ void CumulativeHistogram<T>::resize(size_type num_elements) {
   }
 }
 
-template<class T>
+template<Additive T>
 constexpr std::span<const T> CumulativeHistogram<T>::elements() const noexcept {
   return std::span<const T>{elements_.data(), size()};
 }
 
-template<class T>
+template<Additive T>
 typename CumulativeHistogram<T>::const_reference
 CumulativeHistogram<T>::element(size_type k) const {
   return elements_.at(k);
 }
 
-template<class T>
+template<Additive T>
 void CumulativeHistogram<T>::increment(size_type k, const T& value) {
   if (k >= size()) {
     throw std::out_of_range("CumulativeHistogram::increment(): k is out of range.");
@@ -1100,7 +1143,7 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
   elements_[k] += value;
 }
 
-template<class T>
+template<Additive T>
 T CumulativeHistogram<T>::prefixSum(size_type k) const {
   if (k >= size()) {
     throw std::out_of_range("CumulativeHistogram::prefixSum(): k is out of range.");
@@ -1131,7 +1174,7 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
   return result;
 }
 
-template<class T>
+template<Additive T>
 T CumulativeHistogram<T>::totalSum() const {
   if (empty()) {
     throw std::logic_error("CumulativeHistogram::totalSum(): the histogram is empty.");
@@ -1152,7 +1195,7 @@ T CumulativeHistogram<T>::totalSum() const {
   return result;
 }
 
-template<class T>
+template<Additive T>
 template<class Compare>
 std::pair<typename CumulativeHistogram<T>::const_iterator, T>
 CumulativeHistogram<T>::lowerBoundImpl(const T& value, Compare cmp) const {
@@ -1209,13 +1252,13 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value, Compare cmp) const {
   return { begin() + k_upper, prefix_sum_upper };
 }
 
-template<class T>
+template<Additive T>
 std::pair<typename CumulativeHistogram<T>::const_iterator, T>
 CumulativeHistogram<T>::lowerBound(const T& value) const {
   return lowerBoundImpl(value, std::less<T>{});
 }
 
-template<class T>
+template<Additive T>
 std::pair<typename CumulativeHistogram<T>::const_iterator, T>
 CumulativeHistogram<T>::upperBound(const T& value) const {
   // Effectively implements `lhs <= rhs`, but only requires operator< to be defined for T.
