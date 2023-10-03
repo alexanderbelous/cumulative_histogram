@@ -44,14 +44,13 @@ concept Additive =
 // 3) A default-constructed value-initialized object must have the same meaning as the identity element in
 //    additive groups ("zero"): `T{} + x == x` for any x.
 //
-// * Unsigned integer types satisfy these requirements.
-// * Signed integer satisfy these requirements (but note that signed integer overflow is undefined behavior).
-// * Floating-point types satisfy all the requirements except that addition is not associative: due to
-//   finite precision it's not guaranteed that `(a + b) + c == a + (b + c)` for floating-point values
-//   a, b, c. Therefore, computing a prefix sum for a sequence of floating-point values may produce
-//   different results depending on the order of operands. You can still use CumulativeHistogram with
-//   floating-point types, but note that it doesn't attempt to minimize rounding errors. If you need better
-//   precision guarantees, use algorithms like Kahan summation or pairwise summation.
+// * Built-in arithmetic types satisfy these requirements.
+//   * Note that signed integer overflow is undefined behavior.
+//   * Floating-point addition is not always associative due to rounding errors. Hence, computing a prefix
+//     sum for a sequence of floating-point values may produce different results depending on the order of
+//     operands. You can still use CumulativeHistogram with floating-point types, but note that it doesn't
+//     attempt to minimize rounding errors. If you need better precision guarantees, use algorithms like
+//     Kahan summation or pairwise summation.
 // * std::complex and std::chrono::duration satisfy these requirements (except that they have the same issue
 //   with rounding errors when using floating-point versions).
 // * User-defined classes for arbitrary-precision integers, N-dimensional vectors, quaternions, etc satisfy
