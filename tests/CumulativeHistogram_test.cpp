@@ -147,7 +147,35 @@ TEST(CumulativeHistogram, countElementsInLeftmostSubtree) {
   EXPECT_EQ(countElementsInLeftmostSubtree(n_max, 0), n_max);
   EXPECT_EQ(countElementsInLeftmostSubtree(n_max, 1), (n_max / 2) + (n_max % 2 != 0));
   EXPECT_EQ(countElementsInLeftmostSubtree(n_max, 2), (n_max / 4) + (n_max % 4 != 0));
+}
 
+TEST(CumulativeHistogram, findDeepestNodeForElements) {
+  using Detail_NS::findDeepestNodeForElements;
+  // Slow (O(logN)) version for testing.
+  const auto findDeepestNodeForElementsTest = [](std::size_t num_elements, std::size_t capacity) {
+    std::size_t depth = 0;
+    while (capacity > 2) {
+      // Compute the capacity of the left subtree.
+      const std::size_t capacity_left = (capacity / 2) + (capacity % 2 != 0);  // ceil(capacity/2)
+      if (capacity_left < num_elements) {
+        break;
+      }
+      ++depth;
+      capacity = capacity_left;
+    }
+    return depth;
+  };
+  for (std::size_t capacity = 0; capacity <= 1024; ++capacity) {
+    for (std::size_t num_elements = 0; num_elements <= capacity; ++num_elements) {
+      EXPECT_EQ(findDeepestNodeForElements(num_elements, capacity),
+                findDeepestNodeForElementsTest(num_elements, capacity));
+    }
+  }
+  // Check that overflow doesn't happen.
+  constexpr std::size_t n_max = std::numeric_limits<std::size_t>::max();
+  EXPECT_EQ(findDeepestNodeForElements(n_max, n_max), 0);
+  EXPECT_EQ(findDeepestNodeForElements(n_max / 2, n_max), 1);
+  EXPECT_EQ(findDeepestNodeForElements(n_max / 4, n_max), 2);
 }
 
 TEST(CumulativeHistogram, DefaultConstructor) {

@@ -504,8 +504,9 @@ namespace Detail_NS {
     if (capacity < 2) return 0;
     if (num_elements < 2) num_elements = 2;
     // Note that ceil(log2(x)) = ceil(log2(ceil(x)).
-    // TODO: fix the overflow case.
-    const std::size_t ratio = (capacity + num_elements - 2) / (num_elements - 1);  // ceil(Nmax/(N-1))
+    const std::size_t floored_ratio = capacity / (num_elements - 1);
+    const std::size_t remainder = capacity % (num_elements - 1);
+    const std::size_t ratio = floored_ratio + (remainder != 0);  // ceil(Nmax/(N-1))
     return ceilLog2(ratio) - 1;
   }
 
