@@ -553,7 +553,7 @@ namespace Detail_NS {
     // Converting constructor for an immutable TreeView from a mutable TreeView.
     template<class Enable = std::enable_if_t<std::is_const_v<T>>>
     constexpr TreeView(const TreeView<std::remove_const_t<T>>& tree) noexcept :
-      TreeView(tree.nodes(), tree.capacity(), tree.elementFirst(), tree.elementTheoreticalLast())
+      TreeView(tree.nodes(), tree.numElements(), tree.elementFirst(), tree.capacity())
     {}
 
     constexpr std::size_t elementFirst() const noexcept {
@@ -561,11 +561,11 @@ namespace Detail_NS {
     }
 
     constexpr std::size_t elementTheoreticalLast() const noexcept {
-      return element_theoretical_last_;
+      return element_first_ + capacity_ - 1;
     }
 
     constexpr std::size_t capacity() const noexcept {
-      return element_theoretical_last_ - element_first_ + 1;
+      return capacity_;
     }
 
     constexpr bool empty() const noexcept {
@@ -581,7 +581,7 @@ namespace Detail_NS {
     }
 
     constexpr std::size_t pivot() const noexcept {
-      return element_first_ + (element_theoretical_last_ - element_first_) / 2;
+      return element_first_ + (capacity_ - 1) / 2;
     }
 
     constexpr reference root() const {
@@ -593,7 +593,7 @@ namespace Detail_NS {
       const std::size_t capacity_left = (capacity() + 1) / 2;   // ceil(capacity() / 2)
       const std::size_t num_nodes_left = nodes_.size() / 2;     // ceil((nodes_.size() - 1) / 2)
       return TreeView(nodes_.subspan(1, num_nodes_left),
-                      capacity_left, element_first_, pivot());
+                      capacity_left, element_first_, capacity_left);
     }
 
     constexpr TreeView rightChild() const noexcept {
@@ -614,18 +614,18 @@ namespace Detail_NS {
       //      "effective" right subtree and the root of the current tree.
       const std::span<value_type> nodes_at_level = nodes_.subspan(1 + num_nodes_left + level, num_nodes_at_level);
       return TreeView(nodes_at_level,
-                      num_elements_right, element_pivot + 1, element_pivot + capacity_at_level);
+                      num_elements_right, element_pivot + 1, capacity_at_level);
     }
 
   private:
     constexpr TreeView(std::span<value_type> nodes,
                        std::size_t num_elements,
                        std::size_t element_first,
-                       std::size_t element_theoretical_last) noexcept :
+                       std::size_t capacity) noexcept :
       nodes_(nodes),
       num_elements_(num_elements),
       element_first_(element_first),
-      element_theoretical_last_(element_theoretical_last)
+      capacity_(capacity)
     {}
 
     std::span<value_type> nodes_;
@@ -633,7 +633,7 @@ namespace Detail_NS {
     std::size_t num_elements_;
     // Indices of the first and last (inclusive) elements that *can* be represented by the tree.
     std::size_t element_first_;
-    std::size_t element_theoretical_last_;
+    std::size_t capacity_;
   };
 
   // Computes the sum of all elements of the given nodeless tree.
