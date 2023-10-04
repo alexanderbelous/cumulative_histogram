@@ -598,23 +598,24 @@ namespace Detail_NS {
 
     constexpr TreeView rightChild() const noexcept {
       const std::size_t num_nodes_left = nodes_.size() / 2;         // ceil((nodes_.size() - 1) / 2)
-      const std::size_t capacity_total = capacity();
-      const std::size_t capacity_left = (capacity_total + 1) / 2;   // ceil(capacity_total / 2)
-      const std::size_t capacity_right = capacity_total / 2;        // floor(capacity_total / 2)
-      const std::size_t element_pivot = pivot();
+      const std::size_t num_nodes_right = (nodes_.size() - 1) / 2;  // floor((nodes_.size() - 1) / 2)
+      const std::size_t capacity_left = (capacity_ + 1) / 2;        // ceil(capacity_ / 2)
+      const std::size_t capacity_right = capacity_ / 2;             // floor(capacity_ / 2)
+      const std::size_t element_first_right = element_first_ + capacity_left;
       const std::size_t num_elements_right = num_elements_ - capacity_left;
       // Find the deepest leftmost subtree of the immediate right subtree that represents all
-      // elements [element_pivot + 1; element_pivot + num_elements_right].
+      // elements [num_elements_right; num_elements_right + num_elements_right).
       const std::size_t level = findDeepestNodeForElements(num_elements_right, capacity_right);
       const std::size_t capacity_at_level = countElementsInLeftmostSubtree(capacity_right, level);
-      const std::size_t num_nodes_at_level = countNodesInTree(capacity_at_level);
+      // This is the same as countNodesInTree(capacity_at_level), but faster.
+      const std::size_t num_nodes_at_level = num_nodes_right >> level;
       // Skip the 0th node because it's the root.
       // Skip the next `num_nodes_left` because they belong to the left subtree.
       // Skip the next `level` nodes because those are nodes between the root of our
       //      "effective" right subtree and the root of the current tree.
       const std::span<value_type> nodes_at_level = nodes_.subspan(1 + num_nodes_left + level, num_nodes_at_level);
       return TreeView(nodes_at_level,
-                      num_elements_right, element_pivot + 1, capacity_at_level);
+                      num_elements_right, element_first_right, capacity_at_level);
     }
 
   private:
