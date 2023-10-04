@@ -547,7 +547,7 @@ namespace Detail_NS {
     constexpr TreeView(std::span<value_type> nodes,
                        std::size_t num_elements,
                        std::size_t capacity) noexcept :
-      TreeView(nodes, num_elements, 0, capacity - 1)
+      TreeView(nodes, num_elements, 0, capacity)
     {}
 
     // Converting constructor for an immutable TreeView from a mutable TreeView.
