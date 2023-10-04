@@ -1132,12 +1132,20 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
   Detail_NS::TreeView<T> tree(nodes, size(), capacityCurrent());
   while (!tree.empty()) {
     // Check whether the element k is in the left or the right branch.
-    if (k <= tree.pivot()) {
+    if (k > tree.pivot()) {
+      tree = tree.rightChild();
+    }
+    else {
       // The root stores the sum of all elements in the left subtree, so we need to increment it.
       tree.root() += value;
+      // Note that if k == tree.pivot() then we can break from the loop, because
+      // logically we should switch to the left subtree (since it represents elements [0; pivot]),
+      // but after that we will always switch to the right branch, never updating the root.
+      // Breaking early improves performance.
+      if (k == tree.pivot()) {
+        break;
+      }
       tree = tree.leftChild();
-    } else {
-      tree = tree.rightChild();
     }
   }
   // Update the element itself.
