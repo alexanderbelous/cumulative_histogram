@@ -14,6 +14,12 @@
 
 namespace CumulativeHistogram_NS {
 
+// Forward declarations.
+namespace Detail_NS {
+  template<class T>
+  class TreeView;
+}
+
 // Defines a named requirement for an additive type.
 //
 // This is similar to an additive group in mathematics, except that this concept
@@ -252,6 +258,12 @@ class CumulativeHistogram {
   std::pair<const_iterator, T> upperBound(const T& value) const;
 
  private:
+  // Returns an immutable TreeView for the currently effective tree.
+  constexpr Detail_NS::TreeView<const T> getTreeView() const noexcept;
+
+  // Returns an mutable TreeView for the currently effective tree.
+  constexpr Detail_NS::TreeView<T> getMutableTreeView() noexcept;
+
   // Returns the index of the effective root node.
   // * nodes_[getRootIndex()] stores the sum of elements from the left subtree -
   //   but only if there is a left subtree (i.e. if there current tree has at least 1 node).
@@ -261,9 +273,6 @@ class CumulativeHistogram {
   // Returns the maximum number of elements that can represented by the current tree.
   //   num_elements <= capacityCurrent() <= capacity_
   constexpr size_type capacityCurrent() const noexcept;
-
-  // Returns the number of nodes in the current tree.
-  constexpr size_type numNodesCurrent() const noexcept;
 
   // Shared implementation for lowerBound() and upperBound().
   // For computing the lower bound, Compare should effectively implement `lhs < rhs`.
@@ -820,6 +829,28 @@ namespace Detail_NS {
 }  // namespace Detail_NS
 
 template<Additive T>
+constexpr Detail_NS::TreeView<const T> CumulativeHistogram<T>::getTreeView() const noexcept {
+  const size_type root_level = getRootIndex();
+  const size_type capacity_current = Detail_NS::countElementsInLeftmostSubtree(capacity(), root_level);
+  const size_type num_nodes_current = Detail_NS::countNodesInTree(capacity_current);
+  return Detail_NS::TreeView<const T> {
+    std::span<const T> { nodes_.get() + root_level, num_nodes_current },
+    size(), capacity_current
+  };
+}
+
+template<Additive T>
+constexpr Detail_NS::TreeView<T> CumulativeHistogram<T>::getMutableTreeView() noexcept {
+  const size_type root_level = getRootIndex();
+  const size_type capacity_current = Detail_NS::countElementsInLeftmostSubtree(capacity(), root_level);
+  const size_type num_nodes_current = Detail_NS::countNodesInTree(capacity_current);
+  return Detail_NS::TreeView<T> {
+    std::span<T> { nodes_.get() + root_level, num_nodes_current },
+    size(), capacity_current
+  };
+}
+
+template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::size_type
 CumulativeHistogram<T>::getRootIndex() const noexcept {
@@ -835,11 +866,6 @@ CumulativeHistogram<T>::capacityCurrent() const noexcept {
   // level will be 0, and this function will simply return capacity_.
   const std::size_t level = Detail_NS::findDeepestNodeForElements(size(), capacity());
   return Detail_NS::countElementsInLeftmostSubtree(capacity(), level);
-}
-
-template<Additive T>
-constexpr std::size_t CumulativeHistogram<T>::numNodesCurrent() const noexcept {
-  return Detail_NS::countNodesInTree(capacityCurrent());
 }
 
 template<Additive T>
@@ -1031,17 +1057,14 @@ void CumulativeHistogram<T>::setZero() {
   const T zero {};
   std::fill(elements_.begin(), elements_.end(), zero);
   // Zero-out the active nodes.
-  const size_type root_level = getRootIndex();
-  const size_type capacity_current = Detail_NS::countElementsInLeftmostSubtree(capacity(), root_level);
-  const size_type num_nodes_current = Detail_NS::countNodesInTree(capacity_current);
-  const std::span<T> nodes_current = std::span<T>{ nodes_.get() + root_level, num_nodes_current };
+  Detail_NS::TreeView<T> tree = getMutableTreeView();
   // Shortcut: if the current tree is at full capacity, just zero-out all
   // of its nodes and return.
-  if (size() == capacity_current) {
-    std::fill_n(nodes_current.data(), num_nodes_current, zero);
+  if (tree.numElements() == tree.capacity()) {
+    const std::span<T> nodes = tree.nodes();
+    std::fill_n(nodes.data(), nodes.size(), zero);
     return;
   }
-  Detail_NS::TreeView<T> tree(nodes_current, size(), capacity_current);
   while (!tree.empty()) {
     const std::span<T> nodes = tree.nodes();
     // The left subtree is always full, therefore all its nodes are active.
@@ -1065,12 +1088,9 @@ void CumulativeHistogram<T>::push_back(const T& value) {
     const size_type capacity_new = (capacity() == 0) ? 2 : (capacity() * 2);
     reserve(capacity_new);
   }
-
   // There are 2 possibilities - either we can simply add the new element without constructing
   // any new nodes, or we need to extend some subtree by constructing a new root.
-  const std::span<T> nodes = std::span<T>{ nodes_.get(), Detail_NS::countNodesInTree(capacity()) };
-  const std::span<const T> nodes_effective = nodes.subspan(getRootIndex(), numNodesCurrent());
-  Detail_NS::TreeView<const T> tree { nodes_effective, size(), capacityCurrent() };
+  Detail_NS::TreeView<const T> tree = getTreeView();
   // TODO: get rid of this loop. Traversing the tree has O(logN) time complexity, but it can be avoided
   // if we store the path to the deepest rightmost subtree. In that case updating the path can be done in O(1).
   while (tree.numElements() != tree.capacity()) {
@@ -1081,7 +1101,7 @@ void CumulativeHistogram<T>::push_back(const T& value) {
       return;
     }
     // Otherwise, the left subtree must be full, so we switch to the effective right subtree.
-    tree = tree.rightChild();
+    tree.switchToRightChild();
   }
   // If we are here, then we have found some non-empty subtree (maybe the main tree) that is at full capacity.
   // This subtree cannot be the *immediate* right subtree of some existing tree, because that would mean that
@@ -1091,13 +1111,13 @@ void CumulativeHistogram<T>::push_back(const T& value) {
   // *immediate* right subtree. We will construct a new root, whose left subtree will be the tree we've found, and
   // the right subtree will store the element that we are adding.
   // TreeView doesn't store the index of the root node, but it's easy to compute via pointer arithmetic.
-  const std::size_t tmp_root_idx = tree.nodes().data() - nodes.data();
+  const std::size_t tmp_root_idx = tree.nodes().data() - nodes_.get();
   const std::size_t root_idx_new = tmp_root_idx - 1;
   // Compute the sum of all elements in the effective right subtree.
   // This has O(logN) time complexity in the worst case, but, fortunately, the amortized time complexity is O(1).
   const std::span<const T> tmp_elements = std::span<const T>(elements_).subspan(tree.elementFirst(), tree.numElements());
   // Construct the new node.
-  nodes[root_idx_new] = Detail_NS::sumElementsOfFullTree(tmp_elements, tree.nodes());
+  nodes_[root_idx_new] = Detail_NS::sumElementsOfFullTree(tmp_elements, tree.nodes());
   // The new element is added to the right subtree of the newly constructed tree. This subtree doesn't
   // have any nodes yet, because it only represents 1 element.
   elements_.push_back(value);
@@ -1159,11 +1179,7 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
     throw std::out_of_range("CumulativeHistogram::increment(): k is out of range.");
   }
   // Tree representing the elements [0; N).
-  const size_type root_level = getRootIndex();
-  const size_type capacity_current = Detail_NS::countElementsInLeftmostSubtree(capacity(), root_level);
-  const size_type num_nodes_current = Detail_NS::countNodesInTree(capacity_current);
-  const std::span<T> nodes = std::span<T>{ nodes_.get() + root_level, num_nodes_current };
-  Detail_NS::TreeView<T> tree(nodes, size(), capacity_current);
+  Detail_NS::TreeView<T> tree = getMutableTreeView();
   while (!tree.empty()) {
     // Check whether the element k is in the left or the right branch.
     if (k > tree.pivot()) {
@@ -1197,11 +1213,7 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
   }
   T result {};
   // Tree representing the elements [0; N).
-  const size_type root_level = getRootIndex();
-  const size_type capacity_current = Detail_NS::countElementsInLeftmostSubtree(capacity(), root_level);
-  const size_type num_nodes_current = Detail_NS::countNodesInTree(capacity_current);
-  const std::span<T> nodes = std::span<T>{ nodes_.get() + root_level, num_nodes_current };
-  Detail_NS::TreeView<const T> tree(nodes, size(), capacity_current);
+  Detail_NS::TreeView<const T> tree = getTreeView();
   while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [first; middle].
     const std::size_t middle = tree.pivot();
@@ -1226,9 +1238,7 @@ T CumulativeHistogram<T>::totalSum() const {
     throw std::logic_error("CumulativeHistogram::totalSum(): the histogram is empty.");
   }
   T result {};
-  const size_type root_idx = getRootIndex();
-  const std::span<const T> nodes = std::span<const T>{ nodes_.get() + root_idx, numNodesCurrent() };
-  Detail_NS::TreeView<const T> tree(nodes, size(), capacityCurrent());
+  Detail_NS::TreeView<const T> tree = getTreeView();
   while (!tree.empty()) {
     result += tree.root();
     tree.switchToRightChild();
@@ -1252,9 +1262,7 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value, Compare cmp) const {
   T prefix_sum_before_lower {};
   T prefix_sum_upper {};
   // Tree representing the elements [k_lower; k_upper] = [0; N-1].
-  const size_type root_idx = getRootIndex();
-  const std::span<const T> nodes = std::span<const T>{ nodes_.get() + root_idx, numNodesCurrent() };
-  Detail_NS::TreeView<const T> tree(nodes, size(), capacityCurrent());
+  Detail_NS::TreeView<const T> tree = getTreeView();
   while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [k_lower; middle].
     // Sum of elements [0; middle]
