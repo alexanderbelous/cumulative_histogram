@@ -3,6 +3,7 @@
 #include <benchmark/benchmark.h>
 
 #include <cstdint>
+#include <numeric>
 #include <random>
 #include <stdexcept>
 #include <vector>
@@ -10,6 +11,39 @@
 using ::CumulativeHistogram_NS::CumulativeHistogram;
 
 namespace {
+
+template<class T>
+class ArrayOfElements {
+ public:
+  explicit ArrayOfElements(std::size_t num_elements):
+    data_(num_elements)
+  {}
+
+  explicit ArrayOfElements(std::size_t num_elements, const T& value) :
+    data_(num_elements, value)
+  {}
+
+  std::size_t size() const noexcept {
+    return data_.size();
+  }
+
+  void increment(std::size_t k, const T& value) {
+    if (k >= size()) {
+      throw std::out_of_range("Index is out of range");
+    }
+    data_[k] += value;
+  }
+
+  T prefixSum(std::size_t k) const {
+    if (k >= size()) {
+      throw std::out_of_range("Index is out of range");
+    }
+    return std::accumulate(data_.begin(), data_.begin() + k + 1, T{});
+  }
+
+ private:
+  std::vector<T> data_;
+};
 
 template<class T>
 class ArrayOfPrefixSums {
@@ -22,7 +56,7 @@ class ArrayOfPrefixSums {
     data_(num_elements, value)
   {}
 
-  std::size_t size() noexcept {
+  std::size_t size() const noexcept {
     return data_.size();
   }
 
@@ -68,6 +102,32 @@ void BM_CumulativeHisogramIncrement(benchmark::State& state) {
   }
 }
 BENCHMARK(BM_CumulativeHisogramIncrement)->Range(8, 32 << 10);
+
+void BM_ArrayOfElementsPrefixSum(benchmark::State& state) {
+  const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
+  ArrayOfElements<std::uint32_t> histogram(num_elements);
+  std::mt19937 gen;  // mersenne_twister_engine seeded with some default value.
+  std::uniform_int_distribution<std::size_t> distribution{ 0, num_elements - 1 };
+  for (auto _ : state) {
+    // Increment a random element by 1.
+    const std::size_t i = distribution(gen);
+    benchmark::DoNotOptimize(histogram.prefixSum(i));
+  }
+}
+BENCHMARK(BM_ArrayOfElementsPrefixSum)->Range(8, 32 << 10);
+
+void BM_CumulativeHisogramPrefixSum(benchmark::State& state) {
+  const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
+  CumulativeHistogram<std::uint32_t> histogram(num_elements);
+  std::mt19937 gen;  // mersenne_twister_engine seeded with some default value.
+  std::uniform_int_distribution<std::size_t> distribution{ 0, num_elements - 1 };
+  for (auto _ : state) {
+    // Increment a random element by 1.
+    const std::size_t i = distribution(gen);
+    benchmark::DoNotOptimize(histogram.prefixSum(i));
+  }
+}
+BENCHMARK(BM_CumulativeHisogramPrefixSum)->Range(8, 32 << 10);
 
 }
 
