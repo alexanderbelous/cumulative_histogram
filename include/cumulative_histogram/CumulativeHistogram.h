@@ -573,16 +573,12 @@ namespace Detail_NS {
       return element_first_;
     }
 
-    constexpr std::size_t elementTheoreticalLast() const noexcept {
-      return element_first_ + capacity_ - 1;
+    constexpr std::size_t numElements() const noexcept {
+      return num_elements_;
     }
 
     constexpr std::size_t capacity() const noexcept {
       return capacity_;
-    }
-
-    constexpr std::size_t numElements() const noexcept {
-      return num_elements_;
     }
 
     constexpr std::size_t pivot() const noexcept {
@@ -1246,7 +1242,7 @@ T CumulativeHistogram<T>::totalSum() const {
   // Add values of existing elements from the last tree.
   result += elements_[tree.elementFirst()];
   if (tree.numElements() > 1) {
-    result += elements_[tree.elementTheoreticalLast()];
+    result += elements_[tree.elementFirst() + 1];
   }
   return result;
 }
