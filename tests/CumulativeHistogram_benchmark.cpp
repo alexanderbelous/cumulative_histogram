@@ -2,6 +2,7 @@
 
 #include <benchmark/benchmark.h>
 
+#include <chrono>
 #include <cstdint>
 #include <numeric>
 #include <random>
@@ -173,6 +174,28 @@ void BM_CumulativeHisogramLowerBound(benchmark::State& state) {
   }
 }
 BENCHMARK(BM_CumulativeHisogramLowerBound)->Range(8, 256 << 10);
+
+// Measures the average time of calling push_back() N times for a CumulativeHistogram
+// currently storing N elements, and capable of storing 2N elements.
+// The purpose of this benchmark is to demonstrate that the time complexity is amortized constant.
+void BM_CumulativeHisogramPushBackNoReallocation(benchmark::State& state) {
+  const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
+  CumulativeHistogram<std::uint32_t> histogram(num_elements, 1);
+  histogram.reserve(num_elements * 2);
+  for (auto _ : state) {
+    const auto start = std::chrono::high_resolution_clock::now();
+    for (std::size_t i = 0; i < num_elements; ++i) {
+      histogram.push_back(1);
+    }
+    const auto end = std::chrono::high_resolution_clock::now();
+    const auto elapsed_seconds =
+      std::chrono::duration_cast<std::chrono::duration<double>>(end - start);
+    state.SetIterationTime(elapsed_seconds.count() / num_elements);
+    // Reset the number of elements to N.
+    histogram.resize(num_elements);
+  }
+}
+BENCHMARK(BM_CumulativeHisogramPushBackNoReallocation)->Range(8, 256 << 10)->Iterations(100)->UseManualTime();
 
 }
 
