@@ -88,7 +88,7 @@ void BM_ArrayOfPrefixSumsIncrement(benchmark::State& state) {
     histogram.increment(i, 1);
   }
 }
-BENCHMARK(BM_ArrayOfPrefixSumsIncrement)->Range(8, 32 << 10);
+BENCHMARK(BM_ArrayOfPrefixSumsIncrement)->Range(8, 256 << 10);
 
 void BM_CumulativeHisogramIncrement(benchmark::State& state) {
   const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
@@ -101,7 +101,7 @@ void BM_CumulativeHisogramIncrement(benchmark::State& state) {
     histogram.increment(i, 1);
   }
 }
-BENCHMARK(BM_CumulativeHisogramIncrement)->Range(8, 32 << 10);
+BENCHMARK(BM_CumulativeHisogramIncrement)->Range(8, 256 << 10);
 
 void BM_ArrayOfElementsPrefixSum(benchmark::State& state) {
   const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
@@ -114,7 +114,7 @@ void BM_ArrayOfElementsPrefixSum(benchmark::State& state) {
     benchmark::DoNotOptimize(histogram.prefixSum(i));
   }
 }
-BENCHMARK(BM_ArrayOfElementsPrefixSum)->Range(8, 32 << 10);
+BENCHMARK(BM_ArrayOfElementsPrefixSum)->Range(8, 256 << 10);
 
 void BM_CumulativeHisogramPrefixSum(benchmark::State& state) {
   const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
@@ -127,7 +127,7 @@ void BM_CumulativeHisogramPrefixSum(benchmark::State& state) {
     benchmark::DoNotOptimize(histogram.prefixSum(i));
   }
 }
-BENCHMARK(BM_CumulativeHisogramPrefixSum)->Range(8, 32 << 10);
+BENCHMARK(BM_CumulativeHisogramPrefixSum)->Range(8, 256 << 10);
 
 }
 
