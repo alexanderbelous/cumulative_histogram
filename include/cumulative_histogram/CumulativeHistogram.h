@@ -592,7 +592,7 @@ namespace Detail_NS {
       // The left subtree (if it exists) should always be at full capacity.
       const std::size_t capacity_left = (capacity() + 1) / 2;   // ceil(capacity() / 2)
       const std::size_t num_nodes_left = nodes_.size() / 2;     // ceil((nodes_.size() - 1) / 2)
-      // TODO: don't call subspan - benchmark shows improvement.
+      // TODO: don't use subspan - benchmark shows improvement.
       return TreeView(nodes_.subspan(1, num_nodes_left),
                       capacity_left, element_first_, capacity_left);
     }
@@ -614,6 +614,7 @@ namespace Detail_NS {
       // Skip the next `num_nodes_left` because they belong to the left subtree.
       // Skip the next `level` nodes because those are nodes between the root of our
       //      "effective" right subtree and the root of the current tree.
+      // TODO: don't use subspan.
       const std::span<value_type> nodes_at_level = nodes_.subspan(1 + num_nodes_left + level, num_nodes_at_level);
       return TreeView(nodes_at_level,
                       num_elements_right, element_first_right, capacity_at_level);
