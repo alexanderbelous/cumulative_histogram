@@ -888,6 +888,7 @@ constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(const Cumula
     return *this = CumulativeHistogram(other);
   }
   // Our capacity is sufficient to store all elements from `other`, so no memory allocation is needed.
+  // TODO: check the special case when the other tree can be copied.
   elements_.clear();
   elements_.insert(elements_.end(), other.begin(), other.end());
   const size_type num_nodes = Detail_NS::countNodesInTree(capacity_);
@@ -1035,9 +1036,8 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
     } else {
       std::copy_n(effective_nodes_old.cbegin(), effective_nodes_old.size(),
                   effective_nodes_new.begin());
-      // std::vector::reserve() happens after we copy the tree to ensure strong exception guarantee:
-      // copying the tree doesn't modify *this, and std::vector::reserve() itself won't modify
-      // `elements_` if an exception is thrown.
+      // To ensure strong exception guarantee, std::vector::reserve() must be called after (potentitally
+      // throwing) std::copy_n(): if reserve() succeeds, then elements_ will be modified.
       elements_.reserve(num_elements);
     }
   }
