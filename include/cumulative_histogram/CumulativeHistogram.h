@@ -1167,24 +1167,27 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
   }
   T result {};
   // Tree representing the elements [0; N).
-  const size_type root_idx = getRootIndex();
-  const std::span<const T> nodes = std::span<const T>{ nodes_.get() + root_idx, numNodesCurrent() };
-  Detail_NS::TreeView<const T> tree(nodes, size(), capacityCurrent());
+  const size_type root_level = getRootIndex();
+  const size_type capacity_current = Detail_NS::countElementsInLeftmostSubtree(capacity(), root_level);
+  const size_type num_nodes_current = Detail_NS::countNodesInTree(capacity_current);
+  const std::span<T> nodes = std::span<T>{ nodes_.get() + root_level, num_nodes_current };
+  Detail_NS::TreeView<const T> tree(nodes, size(), capacity_current);
   while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [first; middle].
     const std::size_t middle = tree.pivot();
     if (k < middle) {
       tree = tree.leftChild();
-    } else if (k == middle) {
-      return result + tree.root();
-    } else {
+    }
+    else {
       result += tree.root();
+      if (k == middle) {
+        return result;
+      }
       tree = tree.rightChild();
     }
   }
   // If we are here, then the value of x[k] itself hasn't been added through any node in the tree.
-  result += elements_[k];
-  return result;
+  return std::move(result) + elements_[k];
 }
 
 template<Additive T>
