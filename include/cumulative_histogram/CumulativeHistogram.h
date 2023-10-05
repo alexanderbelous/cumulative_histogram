@@ -536,25 +536,24 @@ namespace Detail_NS {
     return static_cast<std::size_t>(-1);
   }
 
-  // High-level API for interacing with an implicit tree data structure.
-  template<class T>
-  class TreeView {
-  public:
-    using value_type = T;
-    using reference = value_type&;
-
-    // Expects that 0 < num_elements <= capacity.
-    constexpr TreeView(std::span<value_type> nodes,
-                       std::size_t num_elements,
-                       std::size_t capacity) noexcept :
-      TreeView(nodes, num_elements, 0, capacity)
+  // Non-template base for TreeView.
+  class TreeViewBase {
+   public:
+    constexpr TreeViewBase(std::size_t num_elements, std::size_t capacity, std::size_t num_nodes) noexcept:
+      element_first_(0),
+      num_elements_(num_elements),
+      capacity_(capacity),
+      num_nodes_(num_nodes)
     {}
 
-    // Converting constructor for an immutable TreeView from a mutable TreeView.
-    template<class Enable = std::enable_if_t<std::is_const_v<T>>>
-    constexpr TreeView(const TreeView<std::remove_const_t<T>>& tree) noexcept :
-      TreeView(tree.nodes(), tree.numElements(), tree.elementFirst(), tree.capacity())
-    {}
+    // Returns true if the tree has no nodes, false otherwise.
+    constexpr bool empty() const noexcept {
+      return num_nodes_ == 0;
+    }
+
+    constexpr std::size_t numNodes() const noexcept {
+      return num_nodes_;
+    }
 
     constexpr std::size_t elementFirst() const noexcept {
       return element_first_;
@@ -568,75 +567,106 @@ namespace Detail_NS {
       return capacity_;
     }
 
-    constexpr bool empty() const noexcept {
-      return nodes_.empty();
-    }
-
     constexpr std::size_t numElements() const noexcept {
       return num_elements_;
-    }
-
-    constexpr std::span<value_type> nodes() const noexcept {
-      return nodes_;
     }
 
     constexpr std::size_t pivot() const noexcept {
       return element_first_ + (capacity_ - 1) / 2;
     }
 
-    constexpr reference root() const {
-      return nodes_.front();
-    }
-
-    constexpr TreeView leftChild() const noexcept {
+   protected:
+    // Returns the offset of the root of the left subtree from the current root.
+    constexpr std::size_t switchToLeftChild() noexcept {
       // The left subtree (if it exists) should always be at full capacity.
-      const std::size_t capacity_left = (capacity() + 1) / 2;   // ceil(capacity() / 2)
-      const std::size_t num_nodes_left = nodes_.size() / 2;     // ceil((nodes_.size() - 1) / 2)
-      // TODO: don't use subspan - benchmark shows improvement.
-      return TreeView(nodes_.subspan(1, num_nodes_left),
-                      capacity_left, element_first_, capacity_left);
+      capacity_ = (capacity_ + 1) / 2;  // ceil(capacity_ / 2)
+      num_elements_ = capacity_;
+      num_nodes_ >>= 1;  // num_nodes_left = ceil((num_nodes_ - 1) / 2)
+      return 1;
     }
 
-    constexpr TreeView rightChild() const noexcept {
-      const std::size_t num_nodes_left = nodes_.size() / 2;         // ceil((nodes_.size() - 1) / 2)
-      const std::size_t num_nodes_right = (nodes_.size() - 1) / 2;  // floor((nodes_.size() - 1) / 2)
-      const std::size_t capacity_left = (capacity_ + 1) / 2;        // ceil(capacity_ / 2)
-      const std::size_t capacity_right = capacity_ / 2;             // floor(capacity_ / 2)
-      const std::size_t element_first_right = element_first_ + capacity_left;
-      const std::size_t num_elements_right = num_elements_ - capacity_left;
+    // Returns the offset of the root of the effective right subtree from the current root.
+    constexpr std::size_t switchToRightChild() noexcept {
+      const std::size_t num_nodes_left = num_nodes_ / 2;         // ceil((nodes_.size() - 1) / 2)
+      const std::size_t num_nodes_right = (num_nodes_ - 1) / 2;  // floor((nodes_.size() - 1) / 2)
+      const std::size_t capacity_left = (capacity_ + 1) / 2;     // ceil(capacity_ / 2)
+      const std::size_t capacity_right = capacity_ / 2;          // floor(capacity_ / 2)
+
+      element_first_ += capacity_left;
+      num_elements_ -= capacity_left;
       // Find the deepest leftmost subtree of the immediate right subtree that represents all
-      // elements [num_elements_right; num_elements_right + num_elements_right).
-      const std::size_t level = findDeepestNodeForElements(num_elements_right, capacity_right);
-      const std::size_t capacity_at_level = countElementsInLeftmostSubtree(capacity_right, level);
+      // real elements of the right subtree.
+      const std::size_t level = findDeepestNodeForElements(num_elements_, capacity_right);
+      capacity_ = countElementsInLeftmostSubtree(capacity_right, level);
       // This is the same as countNodesInTree(capacity_at_level), but faster.
-      const std::size_t num_nodes_at_level = num_nodes_right >> level;
+      num_nodes_ = num_nodes_right >> level;
       // Skip the 0th node because it's the root.
       // Skip the next `num_nodes_left` because they belong to the left subtree.
       // Skip the next `level` nodes because those are nodes between the root of our
       //      "effective" right subtree and the root of the current tree.
-      // TODO: don't use subspan.
-      const std::span<value_type> nodes_at_level = nodes_.subspan(1 + num_nodes_left + level, num_nodes_at_level);
-      return TreeView(nodes_at_level,
-                      num_elements_right, element_first_right, capacity_at_level);
+      return 1 + num_nodes_left + level;
+    }
+
+   private:
+    // Index of the first element represented by the tree.
+    std::size_t element_first_;
+    // The number of real elements represented by the tree.n
+    std::size_t num_elements_;
+    // The maximum number of elements this tree can represent.
+    std::size_t capacity_;
+    // The number of nodes in the tree.
+    std::size_t num_nodes_;
+  };
+
+  // High-level API for interacing with an implicit tree data structure.
+  template<class T>
+  class TreeView : public TreeViewBase {
+  public:
+    // Expects that 0 < num_elements <= capacity.
+    constexpr TreeView(std::span<T> nodes,
+                       std::size_t num_elements,
+                       std::size_t capacity) noexcept :
+      TreeViewBase(num_elements, capacity, nodes.size()),
+      root_(nodes.data())
+    {}
+
+    // Converting constructor for an immutable TreeView from a mutable TreeView.
+    template<class Enable = std::enable_if_t<std::is_const_v<T>>>
+    constexpr TreeView(const TreeView<std::remove_const_t<T>>& tree) noexcept :
+      TreeViewBase(tree),
+      root_(tree.nodes().data())
+    {}
+
+    constexpr std::span<T> nodes() const noexcept {
+      return std::span<T>{root_, numNodes()};
+    }
+
+    constexpr T& root() const {
+      return *root_;
+    }
+
+    constexpr void switchToLeftChild() noexcept {
+      root_ += TreeViewBase::switchToLeftChild();
+    }
+
+    constexpr TreeView leftChild() const noexcept {
+      TreeView tree = *this;
+      tree.switchToLeftChild();
+      return tree;
+    }
+
+    constexpr void switchToRightChild() noexcept {
+      root_ += TreeViewBase::switchToRightChild();
+    }
+
+    constexpr TreeView rightChild() const noexcept {
+      TreeView tree = *this;
+      tree.switchToRightChild();
+      return tree;
     }
 
   private:
-    constexpr TreeView(std::span<value_type> nodes,
-                       std::size_t num_elements,
-                       std::size_t element_first,
-                       std::size_t capacity) noexcept :
-      nodes_(nodes),
-      num_elements_(num_elements),
-      element_first_(element_first),
-      capacity_(capacity)
-    {}
-
-    std::span<value_type> nodes_;
-    // The number of real elements represented by the tree.
-    std::size_t num_elements_;
-    // Indices of the first and last (inclusive) elements that *can* be represented by the tree.
-    std::size_t element_first_;
-    std::size_t capacity_;
+    T* root_;
   };
 
   // Computes the sum of all elements of the given nodeless tree.
@@ -1137,7 +1167,7 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
   while (!tree.empty()) {
     // Check whether the element k is in the left or the right branch.
     if (k > tree.pivot()) {
-      tree = tree.rightChild();
+      tree.switchToRightChild();
     }
     else {
       // The root stores the sum of all elements in the left subtree, so we need to increment it.
@@ -1149,7 +1179,7 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
       if (k == tree.pivot()) {
         break;
       }
-      tree = tree.leftChild();
+      tree.switchToLeftChild();
     }
   }
   // Update the element itself.
@@ -1176,14 +1206,14 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
     // The root of the tree stores the sum of all elements [first; middle].
     const std::size_t middle = tree.pivot();
     if (k < middle) {
-      tree = tree.leftChild();
+      tree.switchToLeftChild();
     }
     else {
       result += tree.root();
       if (k == middle) {
         return result;
       }
-      tree = tree.rightChild();
+      tree.switchToRightChild();
     }
   }
   // If we are here, then the value of x[k] itself hasn't been added through any node in the tree.
@@ -1201,7 +1231,7 @@ T CumulativeHistogram<T>::totalSum() const {
   Detail_NS::TreeView<const T> tree(nodes, size(), capacityCurrent());
   while (!tree.empty()) {
     result += tree.root();
-    tree = tree.rightChild();
+    tree.switchToRightChild();
   }
   // Add values of existing elements from the last tree.
   result += elements_[tree.elementFirst()];
