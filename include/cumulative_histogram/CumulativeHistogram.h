@@ -1268,13 +1268,13 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value, Compare cmp) const {
       // OK, we don't need to check the left tree, because prefixSum(i) < value for i in [0; middle].
       // k_lower = middle + 1;
       prefix_sum_before_lower = std::move(prefix_sum_middle);
-      tree = tree.rightChild();
+      tree.switchToRightChild();
     } else {
       // No need to check the right tree because prefixSum(i) >= value for i in [middle; N).
       // Note that it's still possible that middle is the element we're looking for.
       // k_upper = middle;
       prefix_sum_upper = std::move(prefix_sum_middle);
-      tree = tree.leftChild();
+      tree.switchToLeftChild();
     }
   }
   // We know that cmp(prefixSum(i), value) == true for all i < k_lower
