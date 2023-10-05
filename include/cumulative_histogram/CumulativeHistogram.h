@@ -56,6 +56,11 @@ concept Additive =
 // * User-defined classes for arbitrary-precision integers, N-dimensional vectors, quaternions, etc satisfy
 //   these requirements (as long as they overload operator+ and operator+=).
 // * std::string does NOT satisfy these requirements because string concatenation is not commutative.
+//
+// TODO: add a second parameter SumType, which defaults to T.
+//       In some scenarios it's reasonable to have different types for elements and sums:
+//       e.g., uint16_t may be sufficient for elements, but not for their total sum.
+//       With floating-point elements, it's not uncommon to compute the sum at double precision.
 template<Additive T>
 class CumulativeHistogram {
  public:
