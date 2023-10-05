@@ -1031,23 +1031,25 @@ void CumulativeHistogram<T>::setZero() {
   const T zero {};
   std::fill(elements_.begin(), elements_.end(), zero);
   // Zero-out the active nodes.
-  Detail_NS::TreeView<T> tree(
-    std::span<T> { nodes_.get() + getRootIndex(), numNodesCurrent() },
-    size(), capacityCurrent());
+  const size_type root_level = getRootIndex();
+  const size_type capacity_current = Detail_NS::countElementsInLeftmostSubtree(capacity(), root_level);
+  const size_type num_nodes_current = Detail_NS::countNodesInTree(capacity_current);
+  const std::span<T> nodes_current = std::span<T>{ nodes_.get() + root_level, num_nodes_current };
+  // Shortcut: if the current tree is at full capacity, just zero-out all
+  // of its nodes and return.
+  if (size() == capacity_current) {
+    std::fill_n(nodes_current.data(), num_nodes_current, zero);
+    return;
+  }
+  Detail_NS::TreeView<T> tree(nodes_current, size(), capacity_current);
   while (!tree.empty()) {
     const std::span<T> nodes = tree.nodes();
-    // Shortcut: if the current tree is at full capacity, just zero-out all
-    // of its nodes and return.
-    if (tree.numElements() == tree.capacity()) {
-      std::fill_n(nodes.data(), nodes.size(), zero);
-      return;
-    }
     // The left subtree is always full, therefore all its nodes are active.
-    const std::size_t num_nodes_left = tree.leftChild().nodes().size();
+    const std::size_t num_nodes_left = nodes.size() / 2;  // ceil((nodes.size() - 1) / 2)
     // Zero-initialize the root and the nodes of the left subtree.
     std::fill_n(nodes.data(), 1 + num_nodes_left, zero);
     // Switch to the effective right subtree.
-    tree = tree.rightChild();
+    tree.switchToRightChild();
   }
 }
 

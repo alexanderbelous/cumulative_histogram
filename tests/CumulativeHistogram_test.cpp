@@ -284,6 +284,40 @@ TEST(CumulativeHistogram, Clear) {
   }
 }
 
+TEST(CumulativeHistogram, SetZeroAtFullCapacity) {
+  constexpr std::size_t kNumElements = 32;
+  CumulativeHistogram<int> histogram(kNumElements, 1);
+  histogram.setZero();
+  for (std::size_t i = 0; i < kNumElements; ++i) {
+    EXPECT_EQ(histogram.element(i), 0);
+    EXPECT_EQ(histogram.prefixSum(i), 0);
+  }
+}
+
+TEST(CumulativeHistogram, SetZeroAtMoreThanHalfCapacity) {
+  constexpr std::size_t kCapacity = 32;
+  constexpr std::size_t kNumElements = kCapacity / 2 + 1;
+  CumulativeHistogram<int> histogram(kNumElements, 1);
+  histogram.reserve(kCapacity);
+  histogram.setZero();
+  for (std::size_t i = 0; i < kNumElements; ++i) {
+    EXPECT_EQ(histogram.element(i), 0);
+    EXPECT_EQ(histogram.prefixSum(i), 0);
+  }
+}
+
+TEST(CumulativeHistogram, SetZeroAtLessThanHalfCapacity) {
+  constexpr std::size_t kCapacity = 32;
+  constexpr std::size_t kNumElements = kCapacity / 4 + 1;
+  CumulativeHistogram<int> histogram(kNumElements, 1);
+  histogram.reserve(kCapacity);
+  histogram.setZero();
+  for (std::size_t i = 0; i < kNumElements; ++i) {
+    EXPECT_EQ(histogram.element(i), 0);
+    EXPECT_EQ(histogram.prefixSum(i), 0);
+  }
+}
+
 TEST(CumulativeHistogram, Reserve) {
   constexpr std::array<unsigned int, 5> kElements = { 1, 2, 3, 4, 5};
   // Construct a histogram capable of storing 5 elements.
