@@ -592,6 +592,7 @@ namespace Detail_NS {
       // The left subtree (if it exists) should always be at full capacity.
       const std::size_t capacity_left = (capacity() + 1) / 2;   // ceil(capacity() / 2)
       const std::size_t num_nodes_left = nodes_.size() / 2;     // ceil((nodes_.size() - 1) / 2)
+      // TODO: don't call subspan - benchmark shows improvement.
       return TreeView(nodes_.subspan(1, num_nodes_left),
                       capacity_left, element_first_, capacity_left);
     }
@@ -1127,9 +1128,11 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
     throw std::out_of_range("CumulativeHistogram::increment(): k is out of range.");
   }
   // Tree representing the elements [0; N).
-  const size_type root_idx = getRootIndex();
-  const std::span<T> nodes = std::span<T>{ nodes_.get() + root_idx, numNodesCurrent() };
-  Detail_NS::TreeView<T> tree(nodes, size(), capacityCurrent());
+  const size_type root_level = getRootIndex();
+  const size_type capacity_current = Detail_NS::countElementsInLeftmostSubtree(capacity(), root_level);
+  const size_type num_nodes_current = Detail_NS::countNodesInTree(capacity_current);
+  const std::span<T> nodes = std::span<T>{ nodes_.get() + root_level, num_nodes_current };
+  Detail_NS::TreeView<T> tree(nodes, size(), capacity_current);
   while (!tree.empty()) {
     // Check whether the element k is in the left or the right branch.
     if (k > tree.pivot()) {
