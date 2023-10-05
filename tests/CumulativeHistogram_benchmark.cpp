@@ -87,6 +87,15 @@ class ArrayOfPrefixSums {
   std::vector<T> data_;
 };
 
+void BM_CumulativeHisogramBuildTree (benchmark::State& state) {
+  const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
+  for (auto _ : state) {
+    CumulativeHistogram<std::uint32_t> histogram(num_elements, 1);
+    benchmark::DoNotOptimize(histogram);
+  }
+}
+BENCHMARK(BM_CumulativeHisogramBuildTree)->Range(8, 256 << 10);
+
 void BM_ArrayOfPrefixSumsIncrement(benchmark::State& state) {
   const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
   ArrayOfPrefixSums<std::uint32_t> histogram(num_elements);
