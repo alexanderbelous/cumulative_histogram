@@ -462,7 +462,7 @@ namespace Detail_NS {
     //   h(4a+2) = ceil(ceil((4a+2)/2)/2) = ceil((2a+1)/2) = a+1
     //   h(4a+3) = ceil(ceil((4a+3)/2)/2) = ceil((2a+2)/2) = a+1
     //
-    // The number of nodes in the leftmost subtree is computed as:
+    // The number of elements in the leftmost subtree is computed as:
     //   f(0) = N = ceil(N/1)
     //   f(1) = ceil(f(0)/2) = ceil(N/2)
     //   f(2) = ceil(f(1)/2) = ceil(ceil(N/2)/2) = ceil(N/4)
@@ -1184,10 +1184,7 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
     else {
       // The root stores the sum of all elements in the left subtree, so we need to increment it.
       tree.root() += value;
-      // Note that if k == tree.pivot() then we can break from the loop, because
-      // logically we should switch to the left subtree (since it represents elements [0; pivot]),
-      // but after that we will always switch to the right branch, never updating the root.
-      // Breaking early improves performance.
+      // Break if k == tree.pivot(): this implies that no other node contains elements_[k] as a term.
       if (k == tree.pivot()) {
         break;
       }
