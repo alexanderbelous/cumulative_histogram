@@ -724,26 +724,6 @@ namespace Detail_NS {
     return result;
   }
 
-  // Builds the tree for the given elements.
-  // Expects that:
-  // 1) 0 <= elements.size() <= capacity
-  // 2) nodes.size() == countNodesInTree(capacity)
-  // Time complexity: O(N), where N = elements.size().
-  // TODO: change the API so that `nodes` is only required to have enough nodes to represent all elements.
-  //       Or just pass const std::vector& and let buildTree() decide the optimal structure.
-  template<class T>
-  void buildTree(std::span<const T> elements, std::span<T> nodes, std::size_t capacity) {
-    if (elements.empty()) {
-      return;
-    }
-    const std::size_t level = findDeepestNodeForElements(elements.size(), capacity);
-    const std::size_t capacity_at_level = countElementsInLeftmostSubtree(capacity, level);
-    const std::size_t num_nodes_at_level = countNodesInTree(capacity_at_level);
-    const std::span<T> nodes_at_level = nodes.subspan(level, num_nodes_at_level);
-    TreeView<T> tree(nodes_at_level, elements.size(), capacity_at_level);
-    buildTreeImpl(elements, tree);
-  }
-
   // Initializes the nodes of the specified tree according to the values of the given elements.
   // \param elements - values of elements for which we want to track prefix sums.
   // \param tree - tree for some or all elements from `elements`.
@@ -802,26 +782,39 @@ namespace Detail_NS {
     */
 
     // Tail recursion optimization
-    /*
-    TreeView<true> t = tree;
+    TreeView<T> t = tree;
     T total_sum {};
     while (!t.empty()) {
-      const T total_sum_left = buildTreeImpl(elements, t.leftChild());
-      t.root() = total_sum_left;
-      total_sum += total_sum_left;
-      t = t.rightChild();
+      T total_sum_left = buildTreeImpl(elements, t.leftChild());
+      total_sum += std::as_const(total_sum_left);
+      t.root() = std::move(total_sum_left);
+      t.switchToRightChild();
     }
-    return total_sum + sumElementsOfEmptyTree<T>(elements, t);
-    */
+    total_sum += elements[t.elementFirst()];
+    if (t.numElements() > 1) {
+      total_sum += elements[t.elementFirst() + 1];
+    }
+    return total_sum;
+  }
 
-    // Two recursive calls
-    // Lol, surprisingly, this is the most efficient version.
-    if (tree.empty()) {
-      return sumElementsOfEmptyTree<T>(elements, tree);
+  // Builds the tree for the given elements.
+  // Expects that:
+  // 1) 0 <= elements.size() <= capacity
+  // 2) nodes.size() == countNodesInTree(capacity)
+  // Time complexity: O(N), where N = elements.size().
+  // TODO: change the API so that `nodes` is only required to have enough nodes to represent all elements.
+  //       Or just pass const std::vector& and let buildTree() decide the optimal structure.
+  template<class T>
+  void buildTree(std::span<const T> elements, std::span<T> nodes, std::size_t capacity) {
+    if (elements.empty()) {
+      return;
     }
-    const T total_sum_left = buildTreeImpl(elements, tree.leftChild());
-    tree.root() = total_sum_left;
-    return total_sum_left + buildTreeImpl(elements, tree.rightChild());
+    const std::size_t level = findDeepestNodeForElements(elements.size(), capacity);
+    const std::size_t capacity_at_level = countElementsInLeftmostSubtree(capacity, level);
+    const std::size_t num_nodes_at_level = countNodesInTree(capacity_at_level);
+    const std::span<T> nodes_at_level = nodes.subspan(level, num_nodes_at_level);
+    TreeView<T> tree(nodes_at_level, elements.size(), capacity_at_level);
+    buildTreeImpl(elements, tree);
   }
 
 }  // namespace Detail_NS
