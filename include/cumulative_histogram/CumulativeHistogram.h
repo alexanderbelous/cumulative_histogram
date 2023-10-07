@@ -6,6 +6,7 @@
 #include <concepts>
 #include <iterator>
 #include <memory>
+#include <numeric>
 #include <stdexcept>
 #include <span>
 #include <type_traits>
@@ -70,6 +71,11 @@ concept Additive =
 template<Additive T>
 class CumulativeHistogram {
  public:
+   // Split capacity into M = ceil(Nmax/BucketSize) buckets, and build a tree for those. This
+   // improves performance for small N for arithmetic types (by enabling vectorization).
+  // TODO: make this a template parameter.
+  static constexpr std::size_t BucketSize = 128;
+
   using value_type = T;
   // TODO: declare as `typename std::vector<T>::size_type`.
   using size_type = std::size_t;
@@ -384,6 +390,14 @@ namespace Detail_NS {
     const std::size_t p2h = std::bit_floor(n);  // 2^h, where h = floor(log2(n))
     const std::size_t p2h_1 = p2h >> 1;         // 2^(h-1)
     return std::min(p2h - 1, n - p2h_1);
+  }
+
+  constexpr std::size_t countBuckets(std::size_t num_elements, std::size_t bucket_size) noexcept {
+    return (num_elements / bucket_size) + (num_elements % bucket_size != 0);
+  }
+
+  constexpr std::size_t countNodesInBucketizedTree(std::size_t num_buckets) noexcept {
+    return num_buckets == 0 ? 0 : (num_buckets - 1);
   }
 
   // Returns the height of the (full) tree for the specified number of elements.
@@ -819,27 +833,77 @@ namespace Detail_NS {
     buildTreeImpl(elements, tree);
   }
 
+  template<class T>
+  T buildBucketizedTreeImpl(std::span<const T> elements, const TreeView<T>& tree, std::size_t bucket_size) {
+    TreeView<T> t = tree;
+    T total_sum{};
+    while (!t.empty()) {
+      T total_sum_left = buildBucketizedTreeImpl(elements, t.leftChild(), bucket_size);
+      total_sum += std::as_const(total_sum_left);
+      t.root() = std::move(total_sum_left);
+      t.switchToRightChild();
+    }
+    assert(t.numElements() == 1);
+    const std::size_t bucket_index = t.elementFirst();
+    const std::size_t element_first = bucket_index * bucket_size;
+    const std::size_t num_elements = std::min(elements.size() - element_first, bucket_size);
+    const std::span<const T> elements_in_bucket = elements.subspan(element_first, num_elements);
+    return std::accumulate(elements_in_bucket.begin(), elements_in_bucket.end(), std::move(total_sum));
+  }
+
+  template<class T>
+  void buildBucketizedTree(std::span<const T> elements, std::span<T> nodes, std::size_t capacity, std::size_t bucket_size) {
+    if (elements.empty()) {
+      return;
+    }
+    const std::size_t bucket_capacity = countBuckets(capacity, bucket_size);
+    const std::size_t max_num_nodes = countNodesInBucketizedTree(bucket_capacity);
+    assert(nodes.size() == max_num_nodes);
+    const std::size_t num_buckets = countBuckets(elements.size(), bucket_size);
+
+    const std::size_t level = findDeepestNodeForElements(num_buckets, bucket_capacity);
+    const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, level);
+    const std::size_t num_nodes_at_level = countNodesInBucketizedTree(bucket_capacity_at_level);
+    const std::span<T> nodes_at_level = nodes.subspan(level, num_nodes_at_level);
+    TreeView<T> tree(nodes_at_level, num_buckets, bucket_capacity_at_level);
+    buildBucketizedTreeImpl(elements, tree, bucket_size);
+  }
+
 }  // namespace Detail_NS
 
 template<Additive T>
 constexpr Detail_NS::TreeView<const T> CumulativeHistogram<T>::getTreeView() const noexcept {
-  const size_type root_level = getRootIndex();
-  const size_type capacity_current = Detail_NS::countElementsInLeftmostSubtree(capacity(), root_level);
-  const size_type num_nodes_current = Detail_NS::countNodesInTree(capacity_current);
+  // The maximum number of buckets the current tree can represent.
+  const std::size_t bucket_capacity = Detail_NS::countBuckets(capacity(), BucketSize);
+  // Number of buckets needed to represent the current elements.
+  const std::size_t num_buckets = Detail_NS::countBuckets(elements_.size(), BucketSize);
+  // Level of the currently effective tree.
+  const std::size_t root_level = Detail_NS::findDeepestNodeForElements(num_buckets, bucket_capacity);
+  // The number of buckets at the current level.
+  const std::size_t bucket_capacity_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
+  // The number of nodes at the current level.
+  const std::size_t num_nodes_at_level = Detail_NS::countNodesInBucketizedTree(bucket_capacity_at_level);
   return Detail_NS::TreeView<const T> {
-    std::span<const T> { nodes_.get() + root_level, num_nodes_current },
-    size(), capacity_current
+    std::span<const T> { nodes_.get() + root_level, num_nodes_at_level },
+      num_buckets, bucket_capacity_at_level
   };
 }
 
 template<Additive T>
 constexpr Detail_NS::TreeView<T> CumulativeHistogram<T>::getMutableTreeView() noexcept {
-  const size_type root_level = getRootIndex();
-  const size_type capacity_current = Detail_NS::countElementsInLeftmostSubtree(capacity(), root_level);
-  const size_type num_nodes_current = Detail_NS::countNodesInTree(capacity_current);
+  // The maximum number of buckets the current tree can represent.
+  const std::size_t bucket_capacity = Detail_NS::countBuckets(capacity(), BucketSize);
+  // Number of buckets needed to represent the current elements.
+  const std::size_t num_buckets = Detail_NS::countBuckets(elements_.size(), BucketSize);
+  // Level of the currently effective tree.
+  const std::size_t root_level = Detail_NS::findDeepestNodeForElements(num_buckets, bucket_capacity);
+  // The number of buckets at the current level.
+  const std::size_t bucket_capacity_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
+  // The number of nodes at the current level.
+  const std::size_t num_nodes_at_level = Detail_NS::countNodesInBucketizedTree(bucket_capacity_at_level);
   return Detail_NS::TreeView<T> {
-    std::span<T> { nodes_.get() + root_level, num_nodes_current },
-    size(), capacity_current
+    std::span<T> { nodes_.get() + root_level, num_nodes_at_level },
+      num_buckets, bucket_capacity_at_level
   };
 }
 
@@ -847,18 +911,24 @@ template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::size_type
 CumulativeHistogram<T>::getRootIndex() const noexcept {
-  return Detail_NS::findDeepestNodeForElements(size(), capacity());
+  // The maximum number of buckets the current tree can represent.
+  const std::size_t bucket_capacity = Detail_NS::countBuckets(capacity(), BucketSize);
+  // Number of buckets needed to represent the current elements.
+  const std::size_t num_buckets = Detail_NS::countBuckets(elements_.size(), BucketSize);
+  return Detail_NS::findDeepestNodeForElements(num_buckets, bucket_capacity);
 }
 
 template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::size_type
 CumulativeHistogram<T>::capacityCurrent() const noexcept {
-  // Determine the depth of the current root node in the "full" tree.
-  // Note that there aren't actually any nodes if capacity_ < 3. In that case
-  // level will be 0, and this function will simply return capacity_.
-  const std::size_t level = Detail_NS::findDeepestNodeForElements(size(), capacity());
-  return Detail_NS::countElementsInLeftmostSubtree(capacity(), level);
+  // The maximum number of buckets the current tree can represent.
+  const std::size_t bucket_capacity = Detail_NS::countBuckets(capacity(), BucketSize);
+  // Number of buckets needed to represent the current elements.
+  const std::size_t num_buckets = Detail_NS::countBuckets(elements_.size(), BucketSize);
+  const std::size_t level = Detail_NS::findDeepestNodeForElements(num_buckets, bucket_capacity);
+  const std::size_t bucket_capacity_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, level);
+  return bucket_capacity_at_level * BucketSize;
 }
 
 template<Additive T>
@@ -884,9 +954,10 @@ constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(const Cumula
   // TODO: check the special case when the other tree can be copied.
   elements_.clear();
   elements_.insert(elements_.end(), other.begin(), other.end());
-  const size_type num_nodes = Detail_NS::countNodesInTree(capacity_);
+  const size_type num_buckets = Detail_NS::countBuckets(capacity_, BucketSize);
+  const size_type num_nodes = Detail_NS::countNodesInBucketizedTree(num_buckets);
   const std::span<T> nodes{ nodes_.get(), num_nodes };
-  Detail_NS::buildTree<T>(elements_, nodes, capacity_);
+  Detail_NS::buildBucketizedTree<T>(elements_, nodes, capacity_, BucketSize);
   return *this;
 }
 
@@ -907,11 +978,13 @@ CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
   elements_(num_elements),
   capacity_(num_elements)
 {
-  if (capacity_ != 0) {
-    const size_type num_nodes = Detail_NS::countNodesInTree(capacity_);
-    // Zero-initialize the nodes.
-    nodes_ = std::make_unique<T[]>(num_nodes);
+  if (num_elements == 0) {
+    return;
   }
+  const size_type num_buckets = Detail_NS::countBuckets(capacity_, BucketSize);
+  const size_type num_nodes = Detail_NS::countNodesInBucketizedTree(num_buckets);
+  // Zero-initialize the nodes.
+  nodes_ = std::make_unique<T[]>(num_nodes);
 }
 
 template<Additive T>
@@ -929,11 +1002,12 @@ CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
     return;
   }
   // TODO: only construct nodes that are needed to represent the current level.
-  const size_type num_nodes = Detail_NS::countNodesInTree(capacity_);
+  const size_type num_buckets = Detail_NS::countBuckets(capacity_, BucketSize);
+  const size_type num_nodes = Detail_NS::countNodesInBucketizedTree(num_buckets);
   // Default-initialize the nodes - there's no need to zero-initialize them.
   nodes_ = std::make_unique_for_overwrite<T[]>(num_nodes);
   const std::span<T> nodes{ nodes_.get(), num_nodes };
-  Detail_NS::buildTree<T>(elements_, nodes, capacity());
+  Detail_NS::buildBucketizedTree<T>(elements_, nodes, capacity_, BucketSize);
 }
 
 template<Additive T>
@@ -1175,14 +1249,15 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
   Detail_NS::TreeView<T> tree = getMutableTreeView();
   while (!tree.empty()) {
     // Check whether the element k is in the left or the right branch.
-    if (k > tree.pivot()) {
+    const std::size_t pivot = (tree.pivot() + 1) * BucketSize - 1;
+    if (k > pivot) {
       tree.switchToRightChild();
     }
     else {
       // The root stores the sum of all elements in the left subtree, so we need to increment it.
       tree.root() += value;
-      // Break if k == tree.pivot(): this implies that no other node contains elements_[k] as a term.
-      if (k == tree.pivot()) {
+      // Break if k == pivot: this implies that no other node contains elements_[k] as a term.
+      if (k == pivot) {
         break;
       }
       tree.switchToLeftChild();
@@ -1206,7 +1281,7 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
   Detail_NS::TreeView<const T> tree = getTreeView();
   while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [first; middle].
-    const std::size_t middle = tree.pivot();
+    const std::size_t middle = (tree.pivot() + 1) * BucketSize - 1;
     if (k < middle) {
       tree.switchToLeftChild();
     }
@@ -1218,8 +1293,9 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
       tree.switchToRightChild();
     }
   }
-  // If we are here, then the value of x[k] itself hasn't been added through any node in the tree.
-  return std::move(result) + elements_[k];
+  // Add elements from the bucket.
+  const size_type first = tree.elementFirst() * BucketSize;
+  return std::accumulate(elements_.begin() + first, elements_.begin() + k + 1, std::move(result));
 }
 
 template<Additive T>
@@ -1233,12 +1309,9 @@ T CumulativeHistogram<T>::totalSum() const {
     result += tree.root();
     tree.switchToRightChild();
   }
-  // Add values of existing elements from the last tree.
-  result += elements_[tree.elementFirst()];
-  if (tree.numElements() > 1) {
-    result += elements_[tree.elementFirst() + 1];
-  }
-  return result;
+  // Add values of existing elements from the last bucket.
+  const size_type first = tree.elementFirst() * BucketSize;
+  return std::accumulate(elements_.begin() + first, elements_.end(), std::move(result));
 }
 
 template<Additive T>
