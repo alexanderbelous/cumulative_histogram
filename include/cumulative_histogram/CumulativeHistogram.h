@@ -564,58 +564,59 @@ namespace Detail_NS {
   // Non-template base for TreeView.
   class TreeViewBase {
    public:
-    constexpr TreeViewBase(std::size_t num_elements, std::size_t capacity) noexcept:
-      element_first_(0),
-      num_elements_(num_elements),
-      capacity_(capacity)
+    constexpr TreeViewBase(std::size_t num_buckets, std::size_t bucket_capacity) noexcept:
+      bucket_first_(0),
+      num_buckets_(num_buckets),
+      bucket_capacity_(bucket_capacity)
     {}
 
     // Returns true if the tree has no nodes, false otherwise.
     constexpr bool empty() const noexcept {
-      return capacity_ <= 1;
+      // Same as numNodes() == 0
+      return bucket_capacity_ <= 1;
     }
 
     constexpr std::size_t numNodes() const noexcept {
-      return countNodesInBucketizedTree(capacity_);
+      return countNodesInBucketizedTree(bucket_capacity_);
     }
 
-    constexpr std::size_t elementFirst() const noexcept {
-      return element_first_;
+    constexpr std::size_t bucketFirst() const noexcept {
+      return bucket_first_;
     }
 
-    constexpr std::size_t numElements() const noexcept {
-      return num_elements_;
+    constexpr std::size_t numBuckets() const noexcept {
+      return num_buckets_;
     }
 
-    constexpr std::size_t capacity() const noexcept {
-      return capacity_;
+    constexpr std::size_t bucketCapacity() const noexcept {
+      return bucket_capacity_;
     }
 
     constexpr std::size_t pivot() const noexcept {
-      return element_first_ + (capacity_ - 1) / 2;
+      return bucket_first_ + (bucket_capacity_ - 1) / 2;
     }
 
    protected:
     // Returns the offset of the root of the left subtree from the current root.
     constexpr std::size_t switchToLeftChild() noexcept {
       // The left subtree (if it exists) should always be at full capacity.
-      capacity_ = (capacity_ + 1) / 2;  // ceil(capacity_ / 2)
-      num_elements_ = capacity_;
+      bucket_capacity_ = (bucket_capacity_ + 1) / 2;  // ceil(capacity_ / 2)
+      num_buckets_ = bucket_capacity_;
       return 1;
     }
 
     // Returns the offset of the root of the effective right subtree from the current root.
     constexpr std::size_t switchToRightChild() noexcept {
-      const std::size_t capacity_left = (capacity_ + 1) / 2;     // ceil(capacity_ / 2)
-      const std::size_t capacity_right = capacity_ / 2;          // floor(capacity_ / 2)
-      const std::size_t num_nodes_left = countNodesInBucketizedTree(capacity_left);
+      const std::size_t bucket_capacity_left = (bucket_capacity_ + 1) / 2;  // ceil(capacity_ / 2)
+      const std::size_t bucket_capacity_right = bucket_capacity_ / 2;       // floor(capacity_ / 2)
+      const std::size_t num_nodes_left = countNodesInBucketizedTree(bucket_capacity_left);
 
-      element_first_ += capacity_left;
-      num_elements_ -= capacity_left;
+      bucket_first_ += bucket_capacity_left;
+      num_buckets_ -= bucket_capacity_left;
       // Find the deepest leftmost subtree of the immediate right subtree that represents all
       // real elements of the right subtree.
-      const std::size_t level = findDeepestNodeForElements(num_elements_, capacity_right);
-      capacity_ = countElementsInLeftmostSubtree(capacity_right, level);
+      const std::size_t level = findDeepestNodeForElements(num_buckets_, bucket_capacity_right);
+      bucket_capacity_ = countElementsInLeftmostSubtree(bucket_capacity_right, level);
       // Skip the 0th node because it's the root.
       // Skip the next `num_nodes_left` because they belong to the left subtree.
       // Skip the next `level` nodes because those are nodes between the root of our
@@ -625,11 +626,11 @@ namespace Detail_NS {
 
    private:
     // Index of the first element represented by the tree.
-    std::size_t element_first_;
+    std::size_t bucket_first_;
     // The number of real elements represented by the tree.n
-    std::size_t num_elements_;
+    std::size_t num_buckets_;
     // The maximum number of elements this tree can represent.
-    std::size_t capacity_;
+    std::size_t bucket_capacity_;
   };
 
   // High-level API for interacing with an implicit tree data structure.
@@ -683,20 +684,6 @@ namespace Detail_NS {
     T* root_;
   };
 
-  // Computes the sum of all elements of the given nodeless tree.
-  // Such trees always represent either 1 or 2 elements, so there's no need for a loop.
-  // Time complexity: O(1).
-  template<class T>
-  constexpr T sumElementsOfEmptyTree(std::span<const T> elements, const TreeView<const T>& tree) {
-    const std::size_t num_elements = tree.numElements();
-    assert(0 < num_elements && num_elements <= 2);
-    const std::size_t first = tree.elementFirst();
-    if (num_elements == 1) {
-      return elements[first];
-    }
-    return elements[first] + elements[first + 1];
-  }
-
   // This function is intended to be called for trees at their full capacity.
   // Computes the total sum of elements of a tree which is at its full capacity.
   // \param elements - elements represented by the tree.
@@ -736,96 +723,8 @@ namespace Detail_NS {
   // Initializes the nodes of the specified tree according to the values of the given elements.
   // \param elements - values of elements for which we want to track prefix sums.
   // \param tree - tree for some or all elements from `elements`.
+  // \param bucket_size - the number of elements per bucket.
   // \returns the total sum of elements represented by `tree`.
-  template<class T>
-  T buildTreeImpl(std::span<const T> elements, const TreeView<T>& tree) {
-    // Iterative version
-    /*
-    if (tree.empty())
-    {
-      return sumElementsOfEmptyTree<T>(elements, tree);
-    }
-    struct StackVariables {
-      TreeView<true> tree;
-      T* sum_dest = nullptr;
-      bool done = false;
-    };
-    std::vector<StackVariables> stack;
-    // Reserve memory for all nodes.
-    stack.reserve(countNodesInTree(elements.size()));
-    T total_sum {};
-    stack.push_back(StackVariables{ .tree = tree, .sum_dest = &total_sum, .done = false });
-    while (!stack.empty()) {
-      StackVariables& vars = stack.back();
-      // vars.tree.empty() is always false.
-      // TODO: don't *modify* nodes that represent elements [a; b], where b>elements.size()-1.
-      // Rationale: these nodes will never be accessed during increment() or prefixSum().
-      if (vars.done) {
-        // Add the sum of elements from the left subtree to OUR return value,
-        // which already contains the sum of elements from the right subtree.
-        *(vars.sum_dest) += vars.tree.root();
-        stack.pop_back();
-      } else {
-        vars.done = true;
-        // Zero-initialize the root.
-        vars.tree.root() = T {};
-        // The sum of elements from the left subtree should be added to the root of the current tree.
-        const TreeView<true> left_child = vars.tree.leftChild();
-        if (left_child.empty()) {
-          vars.tree.root() += sumElementsOfEmptyTree<T>(elements, left_child);
-        } else {
-          // Schedule a call to build the left subtree.
-          stack.push_back(StackVariables{ .tree = left_child, .sum_dest = &vars.tree.root(), .done = false });
-        }
-        // The sum of elements from the right subtree should be added to OUR return value.
-        const TreeView<true> right_child = vars.tree.rightChild();
-        if (right_child.empty()) {
-          *(vars.sum_dest) += sumElementsOfEmptyTree<T>(elements, right_child);
-        } else {
-          // Schedule a call to build the right subtree.
-          stack.push_back(StackVariables{ .tree = right_child, .sum_dest = vars.sum_dest, .done = false });
-        }
-      }
-    }
-    return total_sum;
-    */
-
-    // Tail recursion optimization
-    TreeView<T> t = tree;
-    T total_sum {};
-    while (!t.empty()) {
-      T total_sum_left = buildTreeImpl(elements, t.leftChild());
-      total_sum += std::as_const(total_sum_left);
-      t.root() = std::move(total_sum_left);
-      t.switchToRightChild();
-    }
-    total_sum += elements[t.elementFirst()];
-    if (t.numElements() > 1) {
-      total_sum += elements[t.elementFirst() + 1];
-    }
-    return total_sum;
-  }
-
-  // Builds the tree for the given elements.
-  // Expects that:
-  // 1) 0 <= elements.size() <= capacity
-  // 2) nodes.size() == countNodesInTree(capacity)
-  // Time complexity: O(N), where N = elements.size().
-  // TODO: change the API so that `nodes` is only required to have enough nodes to represent all elements.
-  //       Or just pass const std::vector& and let buildTree() decide the optimal structure.
-  template<class T>
-  void buildTree(std::span<const T> elements, std::span<T> nodes, std::size_t capacity) {
-    if (elements.empty()) {
-      return;
-    }
-    const std::size_t level = findDeepestNodeForElements(elements.size(), capacity);
-    const std::size_t capacity_at_level = countElementsInLeftmostSubtree(capacity, level);
-    const std::size_t num_nodes_at_level = countNodesInTree(capacity_at_level);
-    const std::span<T> nodes_at_level = nodes.subspan(level, num_nodes_at_level);
-    TreeView<T> tree(nodes_at_level, elements.size(), capacity_at_level);
-    buildTreeImpl(elements, tree);
-  }
-
   template<class T>
   T buildBucketizedTreeImpl(std::span<const T> elements, const TreeView<T>& tree, std::size_t bucket_size) {
     TreeView<T> t = tree;
@@ -836,14 +735,21 @@ namespace Detail_NS {
       t.root() = std::move(total_sum_left);
       t.switchToRightChild();
     }
-    assert(t.numElements() == 1);
-    const std::size_t bucket_index = t.elementFirst();
+    assert(t.numBuckets() == 1);
+    const std::size_t bucket_index = t.bucketFirst();
     const std::size_t element_first = bucket_index * bucket_size;
     const std::size_t num_elements = std::min(elements.size() - element_first, bucket_size);
     const std::span<const T> elements_in_bucket = elements.subspan(element_first, num_elements);
     return std::accumulate(elements_in_bucket.begin(), elements_in_bucket.end(), std::move(total_sum));
   }
 
+  // Builds the tree for the given elements.
+  // Expects that:
+  // 1) 0 <= elements.size() <= capacity
+  // 2) nodes.size() == countNodesInBucketizedTree(countBuckets(capacity, bucket_size))
+  // Time complexity: O(N), where N = elements.size().
+  // TODO: change the API so that `nodes` is only required to have enough nodes to represent all elements.
+  //       Or just pass const std::vector& and let buildTree() decide the optimal structure.
   template<class T>
   void buildBucketizedTree(std::span<const T> elements, std::span<T> nodes, std::size_t capacity, std::size_t bucket_size) {
     if (elements.empty()) {
@@ -1073,7 +979,7 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
   // Construct the new tree.
   if (level_for_the_original == static_cast<std::size_t>(-1)) {
     // The old tree is not a subtree of the new tree, so we have to build the new one from scratch.
-    Detail_NS::buildTree<T>(elements_, new_nodes_span, num_elements);
+    Detail_NS::buildBucketizedTree<T>(elements_, new_nodes_span, num_elements, BucketSize);
     // Reserve new data for elements.
     elements_.reserve(num_elements);
   } else {
@@ -1120,7 +1026,7 @@ void CumulativeHistogram<T>::setZero() {
   Detail_NS::TreeView<T> tree = getMutableTreeView();
   // Shortcut: if the current tree is at full capacity, just zero-out all
   // of its nodes and return.
-  if (tree.numElements() == tree.capacity()) {
+  if (tree.numBuckets() == tree.bucketCapacity()) {
     const std::span<T> nodes = tree.nodes();
     std::fill_n(nodes.data(), nodes.size(), zero);
     return;
@@ -1153,7 +1059,7 @@ void CumulativeHistogram<T>::push_back(const T& value) {
   Detail_NS::TreeView<const T> tree = getTreeView();
   // TODO: get rid of this loop. Traversing the tree has O(logN) time complexity, but it can be avoided
   // if we store the path to the deepest rightmost subtree. In that case updating the path can be done in O(1).
-  while (tree.numElements() != tree.capacity()) {
+  while (/* tree is not full */ tree.numBuckets() != tree.bucketCapacity()) {
     // If the tree has no nodes (which means it can represent at most 2 elements) and is not at full capacity,
     // we can simply add the new element without constructing any new nodes.
     if (tree.empty()) {
@@ -1175,7 +1081,8 @@ void CumulativeHistogram<T>::push_back(const T& value) {
   const std::size_t root_idx_new = tmp_root_idx - 1;
   // Compute the sum of all elements in the effective right subtree.
   // This has O(logN) time complexity in the worst case, but, fortunately, the amortized time complexity is O(1).
-  const std::span<const T> tmp_elements = std::span<const T>(elements_).subspan(tree.elementFirst(), tree.numElements());
+  const std::size_t element_first = tree.bucketFirst() * BucketSize;
+  const std::span<const T> tmp_elements = std::span<const T>(elements_).subspan(element_first);
   // Construct the new node.
   nodes_[root_idx_new] = Detail_NS::sumElementsOfFullTree(tmp_elements, tree.nodes());
   // The new element is added to the right subtree of the newly constructed tree. This subtree doesn't
@@ -1287,7 +1194,7 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
     }
   }
   // Add elements from the bucket.
-  const size_type first = tree.elementFirst() * BucketSize;
+  const size_type first = tree.bucketFirst() * BucketSize;
   return std::accumulate(elements_.begin() + first, elements_.begin() + k + 1, std::move(result));
 }
 
@@ -1303,7 +1210,7 @@ T CumulativeHistogram<T>::totalSum() const {
     tree.switchToRightChild();
   }
   // Add values of existing elements from the last bucket.
-  const size_type first = tree.elementFirst() * BucketSize;
+  const size_type first = tree.bucketFirst() * BucketSize;
   return std::accumulate(elements_.begin() + first, elements_.end(), std::move(result));
 }
 
@@ -1337,29 +1244,22 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value, Compare cmp) const {
     }
   }
   // We know that cmp(prefixSum(i), value) == true for all i < k_lower
-  const std::size_t k_lower = tree.elementFirst();
-  // Compute prefixSum(k_lower).
-  prefix_sum_before_lower += elements_[k_lower];
-  if (!cmp(prefix_sum_before_lower, value)) {
-    // OK, k_lower is the answer.
-    return { begin() + k_lower, prefix_sum_before_lower };
-  }
-  // We know that cmp(prefixSum(i), value) == false for all i > k_upper (if there is such i).
-  const std::size_t k_upper = k_lower + tree.numElements() - 1;
-  // If k_upper is the last element, then `prefix_sum_upper` hasn't been initialized.
-  if (k_upper == size() - 1) {
-    // If k_lower == k_upper, then cmp(totalSum(), value) == cmp(prefixSum(k_lower), value) == true.
-    if (k_lower == k_upper) {
-      return { end(), T{} };
-    }
-    prefix_sum_upper = prefix_sum_before_lower + elements_[k_upper];
-    // If cmp(totalSum(), value) == true, then there is no such index k that cmp(prefixSum(k), value) == false.
-    if (cmp(prefix_sum_upper, value)) {
-      return { end(), T{} };
+  const std::size_t k_lower = tree.bucketFirst() * BucketSize;
+  // if k_upper_theoretical < size(), then cmp(prefixSum(i), value) == false for all i >= k_upper_theoretical
+  const std::size_t k_upper_theoretical = (tree.bucketFirst() + tree.numBuckets()) * BucketSize;
+  const std::size_t k_upper = std::min(k_upper_theoretical, size());
+  T prefix_sum = std::move(prefix_sum_before_lower);
+  for (std::size_t i = k_lower; i < k_upper; ++i) {
+    prefix_sum += elements_[i];
+    if (!cmp(prefix_sum, value)) {
+      // OK, i is the answer.
+      return { begin() + i, std::move(prefix_sum) };
     }
   }
-  // OK, cmp(prefixSum(k), value) == false, so k_upper is the answer.
-  return { begin() + k_upper, prefix_sum_upper };
+  if (k_upper_theoretical < size()) {
+    return { begin() + k_upper_theoretical, prefix_sum_upper };
+  }
+  return { end(), T{} };
 }
 
 template<Additive T>
