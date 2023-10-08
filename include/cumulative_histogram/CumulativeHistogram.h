@@ -19,6 +19,9 @@ namespace CumulativeHistogram_NS {
 namespace Detail_NS {
   template<class T>
   class TreeView;
+
+  template<class T>
+  class TreeViewSimple;
 }
 
 // Defines a named requirement for an additive type.
@@ -269,6 +272,9 @@ class CumulativeHistogram {
 
   // Returns an mutable TreeView for the currently effective tree.
   constexpr Detail_NS::TreeView<T> getMutableTreeView() noexcept;
+
+  // Returns an immutable TreeViewSimple for the currently effective tree.
+  constexpr Detail_NS::TreeViewSimple<const T> getTreeViewSimple() const noexcept;
 
   // Returns the index of the effective root node.
   // * nodes_[getRootIndex()] stores the sum of elements from the left subtree -
@@ -592,6 +598,7 @@ namespace Detail_NS {
       return bucket_capacity_;
     }
 
+    // Returns 0-based index of the last bucket (inclusive) of the left subtree.
     constexpr std::size_t pivot() const noexcept {
       return bucket_first_ + (bucket_capacity_ - 1) / 2;
     }
@@ -600,7 +607,8 @@ namespace Detail_NS {
     // Returns the offset of the root of the left subtree from the current root.
     constexpr std::size_t switchToLeftChild() noexcept {
       // The left subtree (if it exists) should always be at full capacity.
-      bucket_capacity_ = (bucket_capacity_ + 1) / 2;  // ceil(capacity_ / 2)
+      ++bucket_capacity_ >>= 1;
+      //bucket_capacity_ = (bucket_capacity_ + 1) / 2;  // ceil(capacity_ / 2)
       num_buckets_ = bucket_capacity_;
       return 1;
     }
@@ -621,6 +629,7 @@ namespace Detail_NS {
       // Skip the next `num_nodes_left` because they belong to the left subtree.
       // Skip the next `level` nodes because those are nodes between the root of our
       //      "effective" right subtree and the root of the current tree.
+      // TODO: this is the same as bucket_capacity_left + level
       return 1 + num_nodes_left + level;
     }
 
@@ -682,6 +691,75 @@ namespace Detail_NS {
 
   private:
     T* root_;
+  };
+
+  // Non-template base for TreeViewSimple
+  template<class T>
+  class TreeViewSimple {
+   public:
+    constexpr TreeViewSimple(T* root, std::size_t num_buckets) noexcept:
+      root_(root),
+      bucket_first_(0),
+      num_buckets_(num_buckets)
+    {}
+
+    // Returns true if the tree has no nodes, false otherwise.
+    constexpr bool empty() const noexcept {
+      // Same as numNodes() == 0
+      return num_buckets_ <= 1;
+    }
+
+    constexpr std::size_t numNodes() const noexcept {
+      return countNodesInBucketizedTree(num_buckets_);
+    }
+
+    constexpr std::size_t bucketFirst() const noexcept {
+      return bucket_first_;
+    }
+
+    constexpr std::size_t numBuckets() const noexcept {
+      return num_buckets_;
+    }
+
+    constexpr std::span<T> nodes() const noexcept {
+      return std::span<T>{root_, numNodes()};
+    }
+
+    constexpr T& root() const {
+      return *root_;
+    }
+
+    // Returns 0-based index of the first bucket (inclusive) of the right subtree.
+    constexpr std::size_t pivot() const noexcept {
+      return bucket_first_ + (num_buckets_ + 1) / 2;
+    }
+
+    // Switches to the immediate left subtree.
+    constexpr void switchToLeftChild() noexcept {
+      // assert(!empty())
+      // The left subtree (if it exists) should always be at full capacity.
+      ++num_buckets_ >>= 1;  // num_buckets_ = ceil(num_buckets_ / 2)
+      ++root_;
+    }
+
+    // Switches to the immediate right subtree.
+    constexpr void switchToRightChild() noexcept {
+      // assert(!empty())
+      const std::size_t num_buckets_left = (num_buckets_ + 1) >> 1;  // ceil(num_buckets_ / 2)
+      bucket_first_ += num_buckets_left;
+      num_buckets_ >>= 1;  // num_buckets_ = floor(num_buckets_ / 2)
+      // Skip root and nodes of the left subtree.
+      // Same as root_ += (1 + countNodesInBucketizedTree(num_buckets_left));
+      root_ += num_buckets_left;
+    }
+
+   private:
+    // Root of the tree.
+    T* root_;
+    // Index of the first bucket represented by the tree.
+    std::size_t bucket_first_;
+    // The number of buckets represented by the tree.n
+    std::size_t num_buckets_;
   };
 
   // This function is intended to be called for trees at their full capacity.
@@ -804,6 +882,19 @@ constexpr Detail_NS::TreeView<T> CumulativeHistogram<T>::getMutableTreeView() no
     std::span<T> { nodes_.get() + root_level, num_nodes_at_level },
       num_buckets, bucket_capacity_at_level
   };
+}
+
+template<Additive T>
+constexpr Detail_NS::TreeViewSimple<const T> CumulativeHistogram<T>::getTreeViewSimple() const noexcept {
+  // The maximum number of buckets the current tree can represent.
+  const std::size_t bucket_capacity = Detail_NS::countBuckets(capacity(), BucketSize);
+  // Number of buckets needed to represent the current elements.
+  const std::size_t num_buckets = Detail_NS::countBuckets(elements_.size(), BucketSize);
+  // Level of the currently effective tree.
+  const std::size_t root_level = Detail_NS::findDeepestNodeForElements(num_buckets, bucket_capacity);
+  // The number of buckets at the current level.
+  const std::size_t bucket_capacity_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
+  return Detail_NS::TreeViewSimple<const T> {nodes_.get(), bucket_capacity_at_level};
 }
 
 template<Additive T>
@@ -1172,22 +1263,23 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
   if (k >= size()) {
     throw std::out_of_range("CumulativeHistogram::prefixSum(): k is out of range.");
   }
-  // Special case for the total sum.
-  if (k == size() - 1) {
+  const size_type k_plus_one = k + 1;
+  // Special case for the total sum
+  if (k_plus_one == size()) {
     return totalSum();
   }
   T result {};
   // Tree representing the elements [0; N).
-  Detail_NS::TreeView<const T> tree = getTreeView();
+  Detail_NS::TreeViewSimple<const T> tree = getTreeViewSimple();
   while (!tree.empty()) {
-    // The root of the tree stores the sum of all elements [first; middle].
-    const std::size_t middle = (tree.pivot() + 1) * BucketSize - 1;
-    if (k < middle) {
+    // The root of the tree stores the sum of all elements [first; middle).
+    const std::size_t middle = tree.pivot() * BucketSize;
+    if (k_plus_one < middle) {
       tree.switchToLeftChild();
     }
     else {
       result += tree.root();
-      if (k == middle) {
+      if (k_plus_one == middle) {
         return result;
       }
       tree.switchToRightChild();
@@ -1195,7 +1287,7 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
   }
   // Add elements from the bucket.
   const size_type first = tree.bucketFirst() * BucketSize;
-  return std::accumulate(elements_.begin() + first, elements_.begin() + k + 1, std::move(result));
+  return std::accumulate(elements_.begin() + first, elements_.begin() + k_plus_one, std::move(result));
 }
 
 template<Additive T>
