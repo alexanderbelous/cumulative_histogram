@@ -564,20 +564,19 @@ namespace Detail_NS {
   // Non-template base for TreeView.
   class TreeViewBase {
    public:
-    constexpr TreeViewBase(std::size_t num_elements, std::size_t capacity, std::size_t num_nodes) noexcept:
+    constexpr TreeViewBase(std::size_t num_elements, std::size_t capacity) noexcept:
       element_first_(0),
       num_elements_(num_elements),
-      capacity_(capacity),
-      num_nodes_(num_nodes)
+      capacity_(capacity)
     {}
 
     // Returns true if the tree has no nodes, false otherwise.
     constexpr bool empty() const noexcept {
-      return num_nodes_ == 0;
+      return capacity_ <= 1;
     }
 
     constexpr std::size_t numNodes() const noexcept {
-      return num_nodes_;
+      return countNodesInBucketizedTree(capacity_);
     }
 
     constexpr std::size_t elementFirst() const noexcept {
@@ -602,16 +601,14 @@ namespace Detail_NS {
       // The left subtree (if it exists) should always be at full capacity.
       capacity_ = (capacity_ + 1) / 2;  // ceil(capacity_ / 2)
       num_elements_ = capacity_;
-      num_nodes_ >>= 1;  // num_nodes_left = ceil((num_nodes_ - 1) / 2)
       return 1;
     }
 
     // Returns the offset of the root of the effective right subtree from the current root.
     constexpr std::size_t switchToRightChild() noexcept {
-      const std::size_t num_nodes_left = num_nodes_ / 2;         // ceil((nodes_.size() - 1) / 2)
-      const std::size_t num_nodes_right = (num_nodes_ - 1) / 2;  // floor((nodes_.size() - 1) / 2)
       const std::size_t capacity_left = (capacity_ + 1) / 2;     // ceil(capacity_ / 2)
       const std::size_t capacity_right = capacity_ / 2;          // floor(capacity_ / 2)
+      const std::size_t num_nodes_left = countNodesInBucketizedTree(capacity_left);
 
       element_first_ += capacity_left;
       num_elements_ -= capacity_left;
@@ -619,8 +616,6 @@ namespace Detail_NS {
       // real elements of the right subtree.
       const std::size_t level = findDeepestNodeForElements(num_elements_, capacity_right);
       capacity_ = countElementsInLeftmostSubtree(capacity_right, level);
-      // This is the same as countNodesInTree(capacity_at_level), but faster.
-      num_nodes_ = num_nodes_right >> level;
       // Skip the 0th node because it's the root.
       // Skip the next `num_nodes_left` because they belong to the left subtree.
       // Skip the next `level` nodes because those are nodes between the root of our
@@ -635,8 +630,6 @@ namespace Detail_NS {
     std::size_t num_elements_;
     // The maximum number of elements this tree can represent.
     std::size_t capacity_;
-    // The number of nodes in the tree.
-    std::size_t num_nodes_;
   };
 
   // High-level API for interacing with an implicit tree data structure.
@@ -647,7 +640,7 @@ namespace Detail_NS {
     constexpr TreeView(std::span<T> nodes,
                        std::size_t num_elements,
                        std::size_t capacity) noexcept :
-      TreeViewBase(num_elements, capacity, nodes.size()),
+      TreeViewBase(num_elements, capacity),
       root_(nodes.data())
     {}
 
