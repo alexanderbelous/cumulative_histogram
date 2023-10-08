@@ -1246,13 +1246,12 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value, Compare cmp) const {
   // We know that cmp(prefixSum(i), value) == true for all i < k_lower
   const std::size_t k_lower = tree.bucketFirst() * BucketSize;
   // if k_upper_theoretical < size(), then cmp(prefixSum(i), value) == false for all i >= k_upper_theoretical
-  const std::size_t k_upper_theoretical = (tree.bucketFirst() + tree.numBuckets()) * BucketSize;
+  const std::size_t k_upper_theoretical = k_lower + BucketSize;
   const std::size_t k_upper = std::min(k_upper_theoretical, size());
   T prefix_sum = std::move(prefix_sum_before_lower);
   for (std::size_t i = k_lower; i < k_upper; ++i) {
     prefix_sum += elements_[i];
     if (!cmp(prefix_sum, value)) {
-      // OK, i is the answer.
       return { begin() + i, std::move(prefix_sum) };
     }
   }
