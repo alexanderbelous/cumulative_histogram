@@ -154,7 +154,7 @@ TEST(CumulativeHistogram, findDeepestNodeForElements) {
   // Slow (O(logN)) version for testing.
   const auto findDeepestNodeForElementsTest = [](std::size_t num_elements, std::size_t capacity) {
     std::size_t depth = 0;
-    while (capacity > 2) {
+    while (capacity > 1) {
       // Compute the capacity of the left subtree.
       const std::size_t capacity_left = (capacity / 2) + (capacity % 2 != 0);  // ceil(capacity/2)
       if (capacity_left < num_elements) {
@@ -302,8 +302,8 @@ TEST(CumulativeHistogram, SetZeroAtMoreThanHalfCapacity) {
   histogram.setZero();
   for (std::size_t i = 0; i < kNumElements; ++i) {
     EXPECT_EQ(histogram.element(i), 0);
-    EXPECT_EQ(histogram.prefixSum(i), 0);
   }
+  CheckPrefixSums(histogram);
 }
 
 TEST(CumulativeHistogram, SetZeroAtLessThanHalfCapacity) {
@@ -314,8 +314,8 @@ TEST(CumulativeHistogram, SetZeroAtLessThanHalfCapacity) {
   histogram.setZero();
   for (std::size_t i = 0; i < kNumElements; ++i) {
     EXPECT_EQ(histogram.element(i), 0);
-    EXPECT_EQ(histogram.prefixSum(i), 0);
   }
+  CheckPrefixSums(histogram);
 }
 
 TEST(CumulativeHistogram, Reserve) {
@@ -631,8 +631,8 @@ TEST(CumulativeHistogram, IsSubtree) {
 
   static_assert(findLeftmostSubtreeWithExactCapacity(0, 2) == kNotSubtree);
   static_assert(findLeftmostSubtreeWithExactCapacity(0, 3) == kNotSubtree);
-  static_assert(findLeftmostSubtreeWithExactCapacity(1, 2) == kNotSubtree);
-  static_assert(findLeftmostSubtreeWithExactCapacity(1, 3) == kNotSubtree);
+  static_assert(findLeftmostSubtreeWithExactCapacity(1, 2) == 1);
+  static_assert(findLeftmostSubtreeWithExactCapacity(1, 3) == 2);
 
   static_assert(findLeftmostSubtreeWithExactCapacity(2, 3) == 1);  // 3 == 2 + 1
   static_assert(findLeftmostSubtreeWithExactCapacity(2, 4) == 1);  // 4 == 2 + 2

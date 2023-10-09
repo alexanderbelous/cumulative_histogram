@@ -526,14 +526,18 @@ namespace Detail_NS {
     //   at most, then the tree has 0 nodes, so we return 0.
     // * N=1 is an edge case because it causes division by 0. In our case it means that
     //   we want to find the deepest leftmost subtree that represents at least 1 element.
-    //   All nodes in our tree represent at least 3 elements; therefore, any left subtree
-    //   (which may have 0 nodes) represents at least 2 elements. Thus, computeRootIdxFast(1, Nmax)
-    //   returns the same as computeRootIdxFast(2, Nmax).
+    //   Note that due to ceiling the formula above implies that k should be infinite.
+    //   That's not what we want though - if N=1, then we want to simply find the deepest
+    //   leftmost subtree (i.e. the first leftmost subtree that represents exactly 1 element).
     // * N=0 is an edge case because it will result into log2(-Nmax), which is undefined.
     //   In our case it means that we should return the deepest leftmost subtree, which is the
-    //   same as calling computeRootIdxFast(2, Nmax).
+    //   same as calling findDeepestNodeForElements(1, Nmax).
     if (capacity < 2) return 0;
-    if (num_elements < 2) num_elements = 2;
+    if (num_elements < 2) {
+      // Find the smallest k such that ceil(Nmax/2^k) == 1
+      // which is simply ceil(log2(Nmax))
+      return ceilLog2(capacity);
+    }
     // Note that ceil(log2(x)) = ceil(log2(ceil(x)).
     const std::size_t floored_ratio = capacity / (num_elements - 1);
     const std::size_t remainder = capacity % (num_elements - 1);
@@ -549,11 +553,12 @@ namespace Detail_NS {
   // Time complexity: O(1).
   constexpr std::size_t findLeftmostSubtreeWithExactCapacity(std::size_t capacity_to_find,
                                                              std::size_t capacity) noexcept {
+    // TODO: comments are out of date.
     // Edge cases:
     // 1) A smaller tree cannot contain a larger tree.
     // 2) Our trees always have capacity >= 2. Trees of capacity == 1 are problematic - we forbid
     //    nodes with fewer than 2 elements, so a tree representing 1 element cannot be anyone's subtree.
-    if (capacity < capacity_to_find || capacity_to_find < 2) {
+    if (capacity < capacity_to_find || capacity_to_find < 1) {
       return static_cast<std::size_t>(-1);
     }
     // Find the deepest leftmost node of the new tree that contains at least `capacity_to_find` elements.
@@ -565,6 +570,33 @@ namespace Detail_NS {
       return level;
     }
     return static_cast<std::size_t>(-1);
+  }
+
+  // Computes the new capacity for a full tree that currently stores the specified number of elements.
+  template<std::size_t BucketSize>
+  constexpr std::size_t computeNewCapacityForFullTree(std::size_t capacity) noexcept {
+    // Special case: if the tree is currently empty, then the new capacity is simply 2.
+    if (capacity == 0) {
+      return 2;
+    }
+    // Otherwise, there's at least 1 bucket already. Check if 2*Nmax elements still fit into a single bucket;
+    // if so, just double the current capacity - the number of buckets will remain 1.
+    if (capacity * 2 <= BucketSize) {
+      return capacity * 2;
+    }
+    // Otherwise, double the number of buckets.
+    // Compute the number of buckets in the current tree.
+    const std::size_t num_buckets = countBuckets(capacity, BucketSize);
+    // What is the smallest M such that
+    //     ceil(M/BucketSize) = 2*ceil(Nmax/BucketSize)
+    //   AND
+    //     M >= Nmax*2
+    // ?
+    // The first inequality gives the lower and the upper bounds:
+    //   2*ceil(Nmax/BucketSize) * BucketSize - (BucketSize - 1) <= M <= 2*ceil(Nmax/BucketSize) * BucketSize
+    // Therefore, the answer is
+    //   max(2*ceil(Nmax/BucketSize) * BucketSize - (BucketSize - 1), Nmax*2)
+    return std::max((2 * num_buckets - 1) * BucketSize + 1, capacity * 2);
   }
 
   // Non-template base for TreeView.
@@ -770,32 +802,21 @@ namespace Detail_NS {
   //   elements.empty() || nodes.size() != countNodesInTree(elements.size())
   // \returns the total sum of elements from `elements`.
   // Time complexity: O(logN), where N = elements.size().
-  template<class T>
+  template<class T, std::size_t BucketSize>
   constexpr T sumElementsOfFullTree(std::span<const T> elements, std::span<const T> nodes) {
     assert(!elements.empty());
-    assert(nodes.size() == countNodesInTree(elements.size()));
-    const std::size_t num_elements = elements.size();
-    const std::size_t path_length_to_rightmost_node = countNodesToRightmostNode(num_elements);
-    const T* node = nodes.data();
-    std::size_t num_nodes = nodes.size();
+    const std::size_t num_buckets = countBuckets(elements.size(), BucketSize);
+    assert(nodes.size() == countNodesInBucketizedTree(num_buckets));
+    TreeViewSimple<const T> tree(nodes.data(), num_buckets);
     T result{};
-    // The loop is equivalent to `while (num_nodes != 0)`, but we can count the
-    // number of iterations in O(1).
-    for (std::size_t depth = 0; depth < path_length_to_rightmost_node; ++depth) {
-      result += *node;
-      // Switch to the right subtree.
-      const std::size_t num_nodes_left = (num_nodes >> 1);  // ceil((num_nodes - 1) / 2);
-      node += (1 + num_nodes_left);
-      num_nodes = (num_nodes - 1) >> 1;  // floor((num_nodes - 1) / 2);
+    while (!tree.empty()) {
+      result += tree.root();
+      tree.switchToRightChild();
     }
-    // The rightmost subtree represents either 3 or 4 elements. The root of that subtree
-    // (which is its only node) stores the sum of the first 2 of these elements, so we need
-    // to add the values of elements[N-1] and, maybe, elements[N-2].
-    if (rightmostNodeHasEvenNumberOfElements(num_elements)) {
-      result += elements[num_elements - 2];
-    }
-    result += elements[num_elements - 1];
-    return result;
+    // The last bucket contains at most BucketSize elements.
+    // TODO: AFAIU, tree.bucketFirst() == num_buckets - 1, so there's no need to track it.
+    const std::size_t first = tree.bucketFirst() * BucketSize;
+    return std::accumulate(elements.begin() + first, elements.end(), std::move(result));
   }
 
   // Initializes the nodes of the specified tree according to the values of the given elements.
@@ -894,7 +915,7 @@ constexpr Detail_NS::TreeViewSimple<const T> CumulativeHistogram<T>::getTreeView
   const std::size_t root_level = Detail_NS::findDeepestNodeForElements(num_buckets, bucket_capacity);
   // The number of buckets at the current level.
   const std::size_t bucket_capacity_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
-  return Detail_NS::TreeViewSimple<const T> {nodes_.get(), bucket_capacity_at_level};
+  return Detail_NS::TreeViewSimple<const T> {nodes_.get() + root_level, bucket_capacity_at_level};
 }
 
 template<Additive T>
@@ -917,6 +938,9 @@ CumulativeHistogram<T>::capacityCurrent() const noexcept {
   // Number of buckets needed to represent the current elements.
   const std::size_t num_buckets = Detail_NS::countBuckets(elements_.size(), BucketSize);
   const std::size_t level = Detail_NS::findDeepestNodeForElements(num_buckets, bucket_capacity);
+  if (level == 0) {
+    return capacity();
+  }
   const std::size_t bucket_capacity_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, level);
   return bucket_capacity_at_level * BucketSize;
 }
@@ -1055,18 +1079,25 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
   if (num_elements <= capacity()) {
     return;
   }
-  // Compute the minimum number of nodes in the tree that can represent `num_elements` elements.
-  const std::size_t num_nodes_new = Detail_NS::countNodesInTree(num_elements);
+
+  // Get the capacity of the currently effective tree.
+  const size_type capacity_current = capacityCurrent();
+  // The maximum number of buckets the currently effective tree can represent.
+  const std::size_t bucket_capacity = Detail_NS::countBuckets(capacity_current, BucketSize);
+  // The maximum number of buckets the new tree can represent.
+  const std::size_t bucket_capacity_new = Detail_NS::countBuckets(num_elements, BucketSize);
+  // Compute the number of nodes in the new tree.
+  const std::size_t num_nodes_new = Detail_NS::countNodesInBucketizedTree(bucket_capacity_new);
+
   // Allocate memory for the new tree.
   // TODO: only construct the nodes that are needed to represent the current level.
   std::unique_ptr<T[]> new_nodes = std::make_unique_for_overwrite<T[]>(num_nodes_new);
   const std::span<T> new_nodes_span{ new_nodes.get(), num_nodes_new };
-  // Get the capacity of the currently effective tree.
-  const size_type capacity_current = capacityCurrent();
+
   // Check the special case when the tree for num_elements has our current tree as a subtree.
   // In that case there's no need to rebuild the tree - we can just copy our current one.
   const std::size_t level_for_the_original =
-    Detail_NS::findLeftmostSubtreeWithExactCapacity(capacity_current, num_elements);
+    Detail_NS::findLeftmostSubtreeWithExactCapacity(bucket_capacity, bucket_capacity_new);
   // Construct the new tree.
   if (level_for_the_original == static_cast<std::size_t>(-1)) {
     // The old tree is not a subtree of the new tree, so we have to build the new one from scratch.
@@ -1076,14 +1107,15 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
   } else {
     // Just copy the current tree as a subtree of the new one.
     const size_type root_idx_old = getRootIndex();
-    const size_type num_nodes_old = Detail_NS::countNodesInTree(capacity_current);
+    const size_type num_nodes_old = Detail_NS::countNodesInBucketizedTree(bucket_capacity);
     const std::span<T> effective_nodes_old { nodes_.get() + root_idx_old, num_nodes_old };
     const std::span<T> effective_nodes_new = new_nodes_span.subspan(level_for_the_original, num_nodes_old);
     // Basic exception guarantee: we only move the nodes if T's move assignment is noexcept;
     // otherwise, we copy them, so that even if an exception is thrown during copying, this class
     // will remain in a valid state.
     // TODO: replace the condition with std::std::is_nothrow_constructible_v after implementing
-    // lifetimes for nodes.
+    // lifetimes for nodes. Note that in this case you won't be able to simply copy all num_nodes_old -
+    // some of them may not have started their lifetime yet.
     if constexpr (std::is_nothrow_move_assignable_v<T>) {
       // Memory is reserved before we move the nodes to ensure strong exception guarantee:
       // std::vector::reserve() may throw an exception, but std::copy_n() cannot.
@@ -1142,23 +1174,28 @@ template<Additive T>
 void CumulativeHistogram<T>::push_back(const T& value) {
   // Double the capacity if needed.
   if (size() == capacity()) {
-    const size_type capacity_new = (capacity() == 0) ? 2 : (capacity() * 2);
-    reserve(capacity_new);
+    reserve(Detail_NS::computeNewCapacityForFullTree<BucketSize>(capacity()));
   }
   // There are 2 possibilities - either we can simply add the new element without constructing
   // any new nodes, or we need to extend some subtree by constructing a new root.
   Detail_NS::TreeView<const T> tree = getTreeView();
   // TODO: get rid of this loop. Traversing the tree has O(logN) time complexity, but it can be avoided
   // if we store the path to the deepest rightmost subtree. In that case updating the path can be done in O(1).
-  while (/* tree is not full */ tree.numBuckets() != tree.bucketCapacity()) {
-    // If the tree has no nodes (which means it can represent at most 2 elements) and is not at full capacity,
+  size_type num_elements = size();
+  size_type tree_capacity = capacityCurrent();
+  while (/* tree is not full */ num_elements != tree_capacity) {
+    // If the tree has no nodes (which means it can represent at most BucketSize elements) and is not at full capacity,
     // we can simply add the new element without constructing any new nodes.
     if (tree.empty()) {
       elements_.push_back(value);
       return;
     }
     // Otherwise, the left subtree must be full, so we switch to the effective right subtree.
+    const size_type num_buckets_left = (tree.bucketCapacity() + 1) / 2;
+    const size_type num_elements_left = num_buckets_left * BucketSize;
+    num_elements -= num_elements_left;
     tree.switchToRightChild();
+    tree_capacity = tree.bucketCapacity() * BucketSize;
   }
   // If we are here, then we have found some non-empty subtree (maybe the main tree) that is at full capacity.
   // This subtree cannot be the *immediate* right subtree of some existing tree, because that would mean that
@@ -1175,7 +1212,7 @@ void CumulativeHistogram<T>::push_back(const T& value) {
   const std::size_t element_first = tree.bucketFirst() * BucketSize;
   const std::span<const T> tmp_elements = std::span<const T>(elements_).subspan(element_first);
   // Construct the new node.
-  nodes_[root_idx_new] = Detail_NS::sumElementsOfFullTree(tmp_elements, tree.nodes());
+  nodes_[root_idx_new] = Detail_NS::sumElementsOfFullTree<T, BucketSize>(tmp_elements, tree.nodes());
   // The new element is added to the right subtree of the newly constructed tree. This subtree doesn't
   // have any nodes yet, because it only represents 1 element.
   elements_.push_back(value);
