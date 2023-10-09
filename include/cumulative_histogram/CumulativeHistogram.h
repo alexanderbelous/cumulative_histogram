@@ -298,7 +298,7 @@ class CumulativeHistogram {
   // Values of elements in the histogram.
   std::vector<T> elements_;
   // Nodes of the tree.
-  // The number of nodes is always equal to Detail_NS::countNodesInTree(capacity_);
+  // The number of nodes is always equal to Detail_NS::countNodesInBucketizedTree(countBuckets(capacity_, BucketSize));
   // TODO: only *construct* nodes that are needed to represent the currently effective tree.
   std::unique_ptr<T[]> nodes_;
   // Current capacity Nmax.
@@ -376,95 +376,12 @@ namespace Detail_NS {
     return is_power_of_2 ? floor_log2 : (floor_log2 + 1);
   }
 
-  // Returns the total number of nodes in the auxiliary tree for
-  // CumulativeHistogram with the specified number of elements.
-  // \param num_elements - the total number of elements represented by the tree.
-  // Time complexity: O(1).
-  constexpr std::size_t countNodesInTree(std::size_t num_elements) noexcept {
-    // This number can be computed via a recurrent relation:
-    //   f(0) = 0
-    //   f(1) = 0
-    //   f(2) = 0
-    //   f(2N) = 2*f(N) + 1
-    //   f(2N+1) = f(N+1) + f(N) + 1
-    //
-    // which forms the sequence https://oeis.org/A279521.
-    if (num_elements <= 2) {
-      return 0;
-    }
-    const std::size_t n = num_elements - 1;
-    const std::size_t p2h = std::bit_floor(n);  // 2^h, where h = floor(log2(n))
-    const std::size_t p2h_1 = p2h >> 1;         // 2^(h-1)
-    return std::min(p2h - 1, n - p2h_1);
-  }
-
   constexpr std::size_t countBuckets(std::size_t num_elements, std::size_t bucket_size) noexcept {
     return (num_elements / bucket_size) + (num_elements % bucket_size != 0);
   }
 
   constexpr std::size_t countNodesInBucketizedTree(std::size_t num_buckets) noexcept {
     return num_buckets == 0 ? 0 : (num_buckets - 1);
-  }
-
-  // Returns the height of the (full) tree for the specified number of elements.
-  // \param num_elements - the total number of elements represented by the tree.
-  // Time complexity: O(1).
-  constexpr std::size_t heightOfFullTree(std::size_t num_elements) noexcept {
-    return (num_elements > 1) ? floorLog2(num_elements - 1) : 0;
-  }
-
-  // Returns the number of nodes between the root (inclusive) and the rightmost
-  // node (also inclusive) of the full tree for the specified number of elements.
-  // \param num_elements - the total number of elements represented by the tree.
-  // Returns 0 if the tree has no nodes.
-  // Time complexity: O(1).
-  constexpr std::size_t countNodesToRightmostNode(std::size_t num_elements) noexcept {
-    const std::size_t num_nodes = countNodesInTree(num_elements);
-    const std::size_t tree_height = heightOfFullTree(num_elements);
-    const std::size_t num_nodes_in_full_binary_tree = (1 << tree_height) - 1;
-    if (num_nodes < num_nodes_in_full_binary_tree) {
-      return tree_height - 1;
-    }
-    return tree_height;
-  }
-
-  // Returns true if the rightmost node of the (full) tree for the specified number of elements
-  // represents an even number of elements, false otherwise.
-  // If the tree has no nodes, the function returns true if `num_elements` is even, or false if it's odd.
-  // \param num_elements - the total number of elements represented by the tree.
-  // Time complexity: O(1).
-  constexpr bool rightmostNodeHasEvenNumberOfElements(std::size_t num_elements) noexcept {
-    // Any leaf node represents either 3 or 4 elements, and its left branch always represents 2 elements.
-    // Therefore, the rightmost node of the full tree represents an even number of elements (4) if
-    // its right branch represents 2 elements, or an odd number of elements (3) if its right branch
-    // represents just 1 element.
-    //
-    // Let f(N) be the number of elements in the right branch of the rightmost node
-    // of a (full) tree for N elements, or simply N if that tree has no nodes.
-    //
-    // f(0) = 0    f(2) = 2    f(4) = 2    f(8) = 2     f(12) = 1
-    // f(1) = 1    f(3) = 1    f(5) = 2    f(9) = 2     f(13) = 1
-    //                         f(6) = 1    f(10) = 2    f(14) = 1
-    //                         f(7) = 1    f(11) = 2    f(15) = 1
-    //
-    // This sequence is similar to https://oeis.org/A079944:
-    //   0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1
-    // which can be computed as
-    //   h(N) = floor(log2(4*(N+2)/3)) - floor(log2(N+2))
-    // for N=0,1,2,...
-    //
-    // f(N) = { 2 - h(N-2), if N >= 2;
-    //        { 1,          if N == 1;
-    //        { 0,          if N == 0.
-    //
-    // Note that floor(log2(x)) = floor(log2(floor(x)) for rational x >= 1, so
-    // h(N - 2) can be computed as floorLog2(4 * num_elements / 3) - floorLog2(num_elements).
-    if (num_elements <= 1) {
-      return num_elements == 0;
-    }
-    // f(N) = 2 - h(N - 2) is even if h(N-2) == 0, and odd if h(N-2) = 1.
-    return floorLog2(4 * num_elements / 3) == floorLog2(num_elements);
-    // TODO: fix the overflow case.
   }
 
   // Returns the number of elements represented by the leftmost subtree with root at the specified level.
@@ -799,7 +716,7 @@ namespace Detail_NS {
   // \param elements - elements represented by the tree.
   // \param nodes - node of the tree.
   // The behavior is undefined if
-  //   elements.empty() || nodes.size() != countNodesInTree(elements.size())
+  //   elements.empty() || nodes.size() != countNodesInBucketizedTree(countBuckets(elements.size(), BucketSize))
   // \returns the total sum of elements from `elements`.
   // Time complexity: O(logN), where N = elements.size().
   template<class T, std::size_t BucketSize>
