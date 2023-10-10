@@ -1229,7 +1229,7 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
       if (middle < size()) {
         tree.root() += value;
       }
-      // Break if k == pivot: this implies that no other node contains elements_[k] as a term.
+      // Break if k == middle-1: this implies that no other node contains elements_[k] as a term.
       if (k_plus_one == middle) {
         break;
       }
