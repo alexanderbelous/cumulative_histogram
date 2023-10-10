@@ -701,7 +701,6 @@ namespace Detail_NS {
     // Switches to the immediate left subtree.
     constexpr void switchToLeftChild() noexcept {
       // assert(!empty())
-      // The left subtree (if it exists) should always be at full capacity.
       ++num_buckets_ >>= 1;  // num_buckets_ = ceil(num_buckets_ / 2)
       ++root_;
     }
