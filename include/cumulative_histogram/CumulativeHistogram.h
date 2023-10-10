@@ -782,6 +782,9 @@ namespace Detail_NS {
     const std::size_t level = findDeepestNodeForElements(num_buckets, bucket_capacity);
     const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, level);
     const std::size_t num_nodes_at_level = countNodesInBucketizedTree(bucket_capacity_at_level);
+    if (num_nodes_at_level == 0) {
+      return;
+    }
     const std::span<T> nodes_at_level = nodes.subspan(level, num_nodes_at_level);
     TreeView<T> tree(nodes_at_level, num_buckets, bucket_capacity_at_level);
     buildBucketizedTreeImpl(elements, tree, bucket_size);
@@ -925,13 +928,12 @@ CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
   elements_(num_elements),
   capacity_(num_elements)
 {
-  if (num_elements == 0) {
-    return;
-  }
-  const size_type num_buckets = Detail_NS::countBuckets(capacity_, BucketSize);
+  const size_type num_buckets = Detail_NS::countBuckets(num_elements, BucketSize);
   const size_type num_nodes = Detail_NS::countNodesInBucketizedTree(num_buckets);
-  // Zero-initialize the nodes.
-  nodes_ = std::make_unique<T[]>(num_nodes);
+  if (num_nodes != 0) {
+    // Allocate and zero-initialize the nodes.
+    nodes_ = std::make_unique<T[]>(num_nodes);
+  }
 }
 
 template<Additive T>
@@ -945,16 +947,15 @@ CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
   elements_(std::move(elements)),
   capacity_(elements_.size())
 {
-  if (elements_.empty()) {
-    return;
-  }
   // TODO: only construct nodes that are needed to represent the current level.
   const size_type num_buckets = Detail_NS::countBuckets(capacity_, BucketSize);
   const size_type num_nodes = Detail_NS::countNodesInBucketizedTree(num_buckets);
-  // Default-initialize the nodes - there's no need to zero-initialize them.
-  nodes_ = std::make_unique_for_overwrite<T[]>(num_nodes);
-  const std::span<T> nodes{ nodes_.get(), num_nodes };
-  Detail_NS::buildBucketizedTree<T>(elements_, nodes, capacity_, BucketSize);
+  if (num_nodes != 0) {
+    // Allocate and default-initialize the nodes - there's no need to zero-initialize them.
+    nodes_ = std::make_unique_for_overwrite<T[]>(num_nodes);
+    const std::span<T> nodes{ nodes_.get(), num_nodes };
+    Detail_NS::buildBucketizedTree<T>(elements_, nodes, capacity_, BucketSize);
+  }
 }
 
 template<Additive T>
