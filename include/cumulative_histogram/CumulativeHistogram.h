@@ -276,6 +276,9 @@ class CumulativeHistogram {
   // Returns an immutable TreeViewSimple for the currently effective tree.
   constexpr Detail_NS::TreeViewSimple<const T> getTreeViewSimple() const noexcept;
 
+  // Returns an immutable TreeViewSimple for the currently effective tree.
+  constexpr Detail_NS::TreeViewSimple<T> getMutableTreeViewSimple() noexcept;
+
   // Returns the index of the effective root node.
   // * nodes_[getRootIndex()] stores the sum of elements from the left subtree -
   //   but only if there is a left subtree (i.e. if there current tree has at least 1 node).
@@ -836,6 +839,19 @@ constexpr Detail_NS::TreeViewSimple<const T> CumulativeHistogram<T>::getTreeView
 }
 
 template<Additive T>
+constexpr Detail_NS::TreeViewSimple<T> CumulativeHistogram<T>::getMutableTreeViewSimple() noexcept {
+  // The maximum number of buckets the current tree can represent.
+  const std::size_t bucket_capacity = Detail_NS::countBuckets(capacity(), BucketSize);
+  // Number of buckets needed to represent the current elements.
+  const std::size_t num_buckets = Detail_NS::countBuckets(elements_.size(), BucketSize);
+  // Level of the currently effective tree.
+  const std::size_t root_level = Detail_NS::findDeepestNodeForElements(num_buckets, bucket_capacity);
+  // The number of buckets at the current level.
+  const std::size_t bucket_capacity_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
+  return Detail_NS::TreeViewSimple<T> {nodes_.get() + root_level, bucket_capacity_at_level};
+}
+
+template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::size_type
 CumulativeHistogram<T>::getRootIndex() const noexcept {
@@ -1190,19 +1206,31 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
   if (k >= size()) {
     throw std::out_of_range("CumulativeHistogram::increment(): k is out of range.");
   }
+  // We are using TreeViewSimple here even though TreeView can skip inactive nodes in O(1)
+  // time. The reason is that traversing TreeViewSimple is much faster - switching to the
+  // left/right subtree only requires 3 or 4 instructions, but for TreeView it's much more.
+  // This is essentially the constant factor of our O(logN) time complexity, and by
+  // using TreeViewSimple we improve the average time complexity, whereas TreeView
+  // optimizes the best-case time complexity at the cost of greater average time complexity.
+  const size_type k_plus_one = k + 1;
   // Tree representing the elements [0; N).
-  Detail_NS::TreeView<T> tree = getMutableTreeView();
+  Detail_NS::TreeViewSimple<T> tree = getMutableTreeViewSimple();
   while (!tree.empty()) {
-    // Check whether the element k is in the left or the right branch.
-    const std::size_t pivot = (tree.pivot() + 1) * BucketSize - 1;
-    if (k > pivot) {
+    // The root of the tree stores the sum of all elements [first; middle).
+    const std::size_t middle = tree.pivot() * BucketSize;
+    if (k_plus_one > middle) {
       tree.switchToRightChild();
     }
     else {
-      // The root stores the sum of all elements in the left subtree, so we need to increment it.
-      tree.root() += value;
+      // The root stores the sum of all elements in the left subtree, i.e. [first; middle),
+      // so we should increment it if the root node is active - which is only if the right subtree
+      // is not empty. The elements represented by the right subtree are [middle; size()), i.e.
+      // it's not empty if and only if middle < size().
+      if (middle < size()) {
+        tree.root() += value;
+      }
       // Break if k == pivot: this implies that no other node contains elements_[k] as a term.
-      if (k == pivot) {
+      if (k_plus_one == middle) {
         break;
       }
       tree.switchToLeftChild();
