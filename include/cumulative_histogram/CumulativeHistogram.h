@@ -1022,6 +1022,13 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
   // Compute the number of nodes in the new tree.
   const std::size_t num_nodes_new = Detail_NS::countNodesInBucketizedTree(bucket_capacity_new);
 
+  // Special case - if the new tree has 0 nodes, then that means that the original tree also has 0 nodes.
+  if (num_nodes_new == 0) {
+    elements_.reserve(num_elements);
+    capacity_ = num_elements;
+    return;
+  }
+
   // Allocate memory for the new tree.
   // TODO: only construct the nodes that are needed to represent the current level.
   std::unique_ptr<T[]> new_nodes = std::make_unique_for_overwrite<T[]>(num_nodes_new);
