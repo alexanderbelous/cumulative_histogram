@@ -1128,14 +1128,19 @@ void CumulativeHistogram<T>::push_back(const T& value) {
   if (size() == capacity()) {
     reserve(Detail_NS::computeNewCapacityForFullTree<BucketSize>(capacity()));
   }
+  // Special case for the empty histogram.
+  if (empty()) {
+    elements_.push_back(value);
+    return;
+  }
   // There are 2 possibilities - either we can simply add the new element without constructing
   // any new nodes, or we need to extend some subtree by constructing a new root.
   Detail_NS::TreeView<const T> tree = getTreeView();
   // TODO: get rid of this loop. Traversing the tree has O(logN) time complexity, but it can be avoided
   // if we store the path to the deepest rightmost subtree. In that case updating the path can be done in O(1).
-  size_type num_elements = size();
-  size_type tree_capacity = capacityCurrent();
-  while (/* tree is not full */ num_elements != tree_capacity) {
+  // Loop until we find a full tree, i.e. the tree whose last theoretical element is N-1, where N is
+  // the current number of elements.
+  while ((tree.bucketFirst() + tree.bucketCapacity()) * BucketSize != size()) {
     // If the tree has no nodes (which means it can represent at most BucketSize elements) and is not at full capacity,
     // we can simply add the new element without constructing any new nodes.
     if (tree.empty()) {
@@ -1143,11 +1148,7 @@ void CumulativeHistogram<T>::push_back(const T& value) {
       return;
     }
     // Otherwise, the left subtree must be full, so we switch to the effective right subtree.
-    const size_type num_buckets_left = (tree.bucketCapacity() + 1) / 2;
-    const size_type num_elements_left = num_buckets_left * BucketSize;
-    num_elements -= num_elements_left;
     tree.switchToRightChild();
-    tree_capacity = tree.bucketCapacity() * BucketSize;
   }
   // If we are here, then we have found some non-empty subtree (maybe the main tree) that is at full capacity.
   // This subtree cannot be the *immediate* right subtree of some existing tree, because that would mean that
