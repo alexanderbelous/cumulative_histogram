@@ -379,11 +379,23 @@ namespace Detail_NS {
     return is_power_of_2 ? floor_log2 : (floor_log2 + 1);
   }
 
+  // Returns the number of buckets needed to represent the specified number of elements.
+  // \param num_elements - the number of elements.
+  // \param bucket_size - the number of elements per bucket.
+  // \returns ceil(num_elements / bucket_size).
   constexpr std::size_t countBuckets(std::size_t num_elements, std::size_t bucket_size) noexcept {
     return (num_elements / bucket_size) + (num_elements % bucket_size != 0);
   }
 
+  // Returns the number of nodes in a tree representing the specified number of buckets.
+  // \param num_buckets - the number of buckets represented by the tree.
   constexpr std::size_t countNodesInBucketizedTree(std::size_t num_buckets) noexcept {
+    // f(0) = 0
+    // f(1) = 0
+    // for any N > 1:
+    //   f(2N) = 1 + 2*f(N)
+    //   f(2N+1) = 1 + f(N+1) + f(N)
+    // It's easy to prove by induction that f(N) = N - 1 for any N > 1.
     return num_buckets == 0 ? 0 : (num_buckets - 1);
   }
 
