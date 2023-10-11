@@ -657,12 +657,10 @@ namespace Detail_NS {
     T* root_;
   };
 
-  // Non-template base for TreeViewSimple
-  template<class T>
-  class TreeViewSimple {
+  // Non-template base for TreeViewSimple.
+  class FullTreeViewBase {
    public:
-    constexpr TreeViewSimple(T* root, std::size_t num_buckets) noexcept:
-      root_(root),
+    constexpr explicit FullTreeViewBase(std::size_t num_buckets) noexcept:
       bucket_first_(0),
       num_buckets_(num_buckets)
     {}
@@ -685,6 +683,47 @@ namespace Detail_NS {
       return num_buckets_;
     }
 
+    // Returns 0-based index of the first bucket (inclusive) of the right subtree.
+    constexpr std::size_t pivot() const noexcept {
+      return bucket_first_ + (num_buckets_ + 1) / 2;
+    }
+
+   protected:
+    // Switches to the immediate left subtree.
+    // \return the offset of the root node of the left subtree from the root node of the parent tree.
+    constexpr std::size_t switchToLeftChild() noexcept {
+      // assert(!empty())
+      ++num_buckets_ >>= 1;  // num_buckets_ = ceil(num_buckets_ / 2)
+      return 1;
+    }
+
+    // Switches to the immediate right subtree.
+    // \return the offset of the root node of the right subtree from the root node of the parent tree.
+    constexpr std::size_t switchToRightChild() noexcept {
+      // assert(!empty())
+      const std::size_t num_buckets_left = (num_buckets_ + 1) >> 1;  // ceil(num_buckets_ / 2)
+      bucket_first_ += num_buckets_left;
+      num_buckets_ >>= 1;  // num_buckets_ = floor(num_buckets_ / 2)
+      // Skip root and nodes of the left subtree.
+      // Same as 1 + countNodesInBucketizedTree(num_buckets_left);
+      return num_buckets_left;
+    }
+
+   private:
+    // Index of the first bucket represented by the tree.
+    std::size_t bucket_first_;
+    // The number of buckets represented by the tree.n
+    std::size_t num_buckets_;
+  };
+
+  template<class T>
+  class TreeViewSimple : public FullTreeViewBase {
+   public:
+    constexpr TreeViewSimple(T* root, std::size_t num_buckets) noexcept:
+      FullTreeViewBase(num_buckets),
+      root_(root)
+    {}
+
     constexpr std::span<T> nodes() const noexcept {
       return std::span<T>{root_, numNodes()};
     }
@@ -693,36 +732,19 @@ namespace Detail_NS {
       return *root_;
     }
 
-    // Returns 0-based index of the first bucket (inclusive) of the right subtree.
-    constexpr std::size_t pivot() const noexcept {
-      return bucket_first_ + (num_buckets_ + 1) / 2;
-    }
-
     // Switches to the immediate left subtree.
     constexpr void switchToLeftChild() noexcept {
-      // assert(!empty())
-      ++num_buckets_ >>= 1;  // num_buckets_ = ceil(num_buckets_ / 2)
-      ++root_;
+      root_ += FullTreeViewBase::switchToLeftChild();
     }
 
     // Switches to the immediate right subtree.
     constexpr void switchToRightChild() noexcept {
-      // assert(!empty())
-      const std::size_t num_buckets_left = (num_buckets_ + 1) >> 1;  // ceil(num_buckets_ / 2)
-      bucket_first_ += num_buckets_left;
-      num_buckets_ >>= 1;  // num_buckets_ = floor(num_buckets_ / 2)
-      // Skip root and nodes of the left subtree.
-      // Same as root_ += (1 + countNodesInBucketizedTree(num_buckets_left));
-      root_ += num_buckets_left;
+      root_ += FullTreeViewBase::switchToRightChild();
     }
 
    private:
     // Root of the tree.
     T* root_;
-    // Index of the first bucket represented by the tree.
-    std::size_t bucket_first_;
-    // The number of buckets represented by the tree.n
-    std::size_t num_buckets_;
   };
 
   // This function is intended to be called for trees at their full capacity.
