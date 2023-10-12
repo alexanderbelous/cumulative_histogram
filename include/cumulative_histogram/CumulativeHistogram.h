@@ -709,6 +709,36 @@ namespace Detail_NS {
       return num_buckets_left;
     }
 
+    // Switches to the leftmost subtree at the specified depth.
+    // \return the offset of the root node of the new tree from the root node of the original tree.
+    constexpr std::size_t switchToLeftmostChild(std::size_t level) noexcept {
+      assert(level == 0 || num_buckets_ > (static_cast<std::size_t>(1) << (level - 1)));
+      num_buckets_ = countElementsInLeftmostSubtree(num_buckets_, level);
+      return level;
+    }
+
+    // Switches to the rightmost subtree at the specified depth.
+    // \return the offset of the root node of the new tree from the root node of the original tree.
+    constexpr std::size_t switchToRightmostChild(std::size_t level) noexcept {
+      const std::size_t num_buckets_new = num_buckets_ >> level;  // floor(N / 2^k)
+      assert(num_buckets_new >= 1);
+
+      const std::size_t num_buckets_skipped = num_buckets_ - num_buckets_new;
+      // By definition, the nodes of the rightmost subtree are the last nodes of the array.
+      // Therefore, in order to compute the offset of the new root node from the old root node,
+      // we can simply compute the difference between the number of nodes of the old tree and the new tree.
+      // Since both of these trees represent at least 1 bucket, the number of their nodes is given by:
+      //   const std::size_t num_nodes_old = num_buckets_ - 1;
+      //   const std::size_t num_nodes_new = num_buckets_new - 1;
+      // Hence, the offset of the new root node from the old one is:
+      //   const std::size_t root_offset = num_buckets_ - num_buckets_new;
+      // Which is equal to num_buckets_skipped.
+
+      bucket_first_ += num_buckets_skipped;
+      num_buckets_ = num_buckets_new;
+      return num_buckets_skipped;
+    }
+
    private:
     // Index of the first bucket represented by the tree.
     std::size_t bucket_first_;
@@ -745,6 +775,165 @@ namespace Detail_NS {
    private:
     // Root of the tree.
     T* root_;
+  };
+
+  class PathEntry : public FullTreeViewBase {
+   public:
+    constexpr explicit PathEntry(std::size_t root_offset, std::size_t num_buckets) noexcept :
+      FullTreeViewBase(num_buckets),
+      root_offset_(root_offset)
+    {}
+
+    constexpr std::size_t rootOffset() const noexcept { return root_offset_; }
+
+    constexpr void switchToLeftChild() noexcept {
+      root_offset_ += FullTreeViewBase::switchToLeftChild();
+    }
+
+    constexpr void switchToRightChild() noexcept {
+      root_offset_ += FullTreeViewBase::switchToRightChild();
+    }
+
+    constexpr void switchToLeftmostChild(std::size_t level) noexcept {
+      root_offset_ += FullTreeViewBase::switchToLeftmostChild(level);
+    }
+
+    constexpr void switchToRightmostChild(std::size_t level) noexcept {
+      root_offset_ += FullTreeViewBase::switchToRightmostChild(level);
+    }
+
+    constexpr PathEntry leftChild() const noexcept {
+      PathEntry tree = *this;
+      tree.switchToLeftChild();
+      return tree;
+    }
+
+    constexpr PathEntry rightChild() const noexcept {
+      PathEntry tree = *this;
+      tree.switchToRightChild();
+      return tree;
+    }
+
+    constexpr PathEntry leftmostChild(std::size_t level) const noexcept {
+      PathEntry tree = *this;
+      tree.switchToLeftmostChild(level);
+      return tree;
+    }
+
+    constexpr PathEntry rightmostChild(std::size_t level) const noexcept {
+      PathEntry tree = *this;
+      tree.switchToRightmostChild(level);
+      return tree;
+    }
+
+   private:
+    // 0-based offset of the root of this tree from the current root of the main tree.
+    // By storing the offset rather than a pointer or the absolute index, we ensure that
+    // the path remains valid even if reserve() extends the tree.
+    std::size_t root_offset_;
+  };
+
+  // Stores a compressed path to the last bucket in the tree.
+  class CompressedPath {
+   public:
+    struct Entry {
+      PathEntry node;
+      std::size_t level; // : std::numeric_limits<std::size_t>::digits;
+      // TODO: store instead a single bool in CompressedPath itself, indicating if the last entry
+      // is a left subtree or a right subtree. The rest can be deduced.
+      bool is_left_subtree; // : 1;
+    };
+
+    constexpr explicit CompressedPath(std::size_t bucket_capacity):
+      bucket_capacity_(bucket_capacity)
+    {}
+
+    constexpr std::span<const Entry> path() const noexcept { return path_; }
+
+    // Appends a bucket to the end.
+    // Time complexity: O(1).
+    void pushBack() {
+      // TODO: double bucket_capacity if the tree is full.
+      // If this is the first bucket, just add 1 entry.
+
+      // Special case - adding the first bucket.
+      if (path_.empty()) {
+        // If the path is empty, it means that the current tree has 0 nodes.
+        // The new entry will represent the immediate left subtree of the root.
+        path_.push_back(Entry{ .node = PathEntry(1, 1), .level = 1, .is_left_subtree = true });
+        return;
+      }
+
+      const Entry& last_entry = path_.back();
+      if (last_entry.is_left_subtree) {
+        const std::size_t level_was = last_entry.level;
+        if (level_was == 1) {
+          // Delete the last entry.
+          path_.pop_back();
+          // Check if there is a previous entry at all.
+          if (path_.empty()) {
+            // Add an entry for the leftmost subtree of the immediate right subtree of the root.
+            // We know that the immediate right subtree of the root has 0 nodes, because the deleted
+            // entry was the immediate left subtree, but it was also a leaf, which means that the height
+            // of the right subtree cannot be greater than 1.
+            // PathEntry(1, 1) is the same as getRootEntry().rightChild().
+            path_.push_back(Entry{ .node = PathEntry(1, 1), .level = 1, .is_left_subtree = false });
+          }
+          else {
+            // Otherwise, the previous entry must be some right subtree of depth M.
+            assert(path_.back().is_left_subtree == false);
+            // Replace the previous entry with an entry for its immediate right subtree.
+            Entry& new_last_entry = path_.back();
+            new_last_entry.node.switchToRightChild();
+            // Increment the level from M to M+1.
+            ++new_last_entry.level;
+          }
+        }
+        else {
+          // TODO: there's no need to need to construct the root entry if the path has more than 1 element.
+          // Actually, this should never happen. If the last entry is the leftmost subtree at level K of the root,
+          // then K must be 1.
+          //const PathEntry root_entry = getRootEntry();
+          // Remove the last entry for the K-th leftmost subtree of some node.
+          path_.pop_back();
+          assert(!path_.empty());
+          // Add a new entry for the (K-1)-th leftmost subtree of the same node.
+          path_.push_back(Entry{ .node = path_.back().node.leftmostChild(level_was - 1),
+                                 .level = level_was - 1,
+                                 .is_left_subtree = true });
+          // Add another entry for the immediate right subtree of the node we've just added.
+          path_.push_back(Entry{ .node = path_.back().node.rightChild(), .level = 1, .is_left_subtree = false });
+        }
+      }
+      else {
+        // OK, the last entry was the rightmost subtree of some node.
+      }
+    }
+
+    // Removes the last bucket.
+    // Time complexity: O(1).
+    void popBack();
+
+   private:
+    // Returns the current number of buckets in the tree.
+    std::size_t numBuckets() const noexcept {
+      if (path_.empty()) {
+        return 0;
+      }
+      const Entry& last_entry = path_.back();
+      return last_entry.node.bucketFirst() + last_entry.node.numBuckets();
+    }
+
+    // Root itself is not stored in the path, but we need to use it sometimes.
+    PathEntry getRootEntry() const noexcept {
+      const std::size_t num_buckets_current = numBuckets();
+      const std::size_t root_level = findDeepestNodeForElements(num_buckets_current, bucket_capacity_);
+      const std::size_t bucket_capacity_current = countElementsInLeftmostSubtree(bucket_capacity_, root_level);
+      return PathEntry(0, bucket_capacity_current);
+    }
+
+    std::vector<Entry> path_;
+    std::size_t bucket_capacity_;
   };
 
   // This function is intended to be called for trees at their full capacity.
