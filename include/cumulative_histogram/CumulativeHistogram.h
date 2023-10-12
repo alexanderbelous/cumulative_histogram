@@ -945,16 +945,14 @@ namespace Detail_NS {
     void switchToImmediateParent() noexcept {
       // TODO: implement switching to the immediate parent for the root.
       assert(!path_.empty());
-      const Entry& last_entry = path_.back();
-      const std::size_t last_entry_level = last_entry.level;
+      Entry& last_entry = path_.back();
       if (last_entry.is_left_subtree) {
-        if (last_entry_level > 1) {
+        if (last_entry.level > 1) {
           // TODO: implement switching to the parent for the only entry in the path.
           assert(path_.size() >= 2);
           // Replace the entry for the leftmost subtree at level M with an entry for the leftmost subtree at level (M-1).
-          path_.pop_back();
-          path_.push_back(Entry{ .node = path_.back().node.leftmostChild(last_entry_level - 1),
-                                 .level = last_entry_level - 1, .is_left_subtree = true });
+          last_entry.node = path_[path_.size() - 2].node.leftmostChild(last_entry.level - 1);
+          --last_entry.level;
         }
         else {
           // Remove the entry for the leftmost subtree at level M == 1.
