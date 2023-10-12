@@ -865,8 +865,8 @@ namespace Detail_NS {
       }
 
       const Entry& last_entry = path_.back();
+      const std::size_t level_was = last_entry.level;
       if (last_entry.is_left_subtree) {
-        const std::size_t level_was = last_entry.level;
         if (level_was == 1) {
           // Delete the last entry.
           path_.pop_back();
@@ -890,12 +890,10 @@ namespace Detail_NS {
           }
         }
         else {
-          // TODO: there's no need to need to construct the root entry if the path has more than 1 element.
-          // Actually, this should never happen. If the last entry is the leftmost subtree at level K of the root,
-          // then K must be 1.
-          //const PathEntry root_entry = getRootEntry();
           // Remove the last entry for the K-th leftmost subtree of some node.
           path_.pop_back();
+          // The entry we've just removed could not be the only entry in the path - if the last entry is
+          // the leftmost subtree at level K of the root, then K must be 1.
           assert(!path_.empty());
           // Add a new entry for the (K-1)-th leftmost subtree of the same node.
           path_.push_back(Entry{ .node = path_.back().node.leftmostChild(level_was - 1),
@@ -907,6 +905,61 @@ namespace Detail_NS {
       }
       else {
         // OK, the last entry was the rightmost subtree of some node.
+        if (path_.size() == 1) {
+          // The path has only 1 entry - the rightmost subtree at level K of the root.
+          // In this case a new root node needs to be added.
+          const std::size_t num_buckets = numBuckets();
+          const std::size_t root_level_was = findDeepestNodeForElements(num_buckets, bucket_capacity_);
+          // The current tree must be full.
+          assert(countElementsInLeftmostSubtree(bucket_capacity_, root_level_was) == num_buckets);
+          // Capacity of the new tree.
+          std::size_t bucket_capacity_current;
+          // Doulbe the capacity if the current tree is the main tree.
+          if (root_level_was == 0) {
+            bucket_capacity_ <<= 1;
+            bucket_capacity_current = bucket_capacity_;
+          }
+          else {
+            bucket_capacity_current = countElementsInLeftmostSubtree(bucket_capacity_, root_level_was - 1);
+          }
+          // Remove the last entry.
+          path_.pop_back();
+          // Add an entry for the immediate right subtree of the new root.
+          path_.push_back(Entry{ .node = PathEntry(0, bucket_capacity_current).rightChild(), .level = 1, .is_left_subtree = false });
+          // If the previously added entry is not a leaf, add an entry for its deepest leftmost subtree.
+          if (!path_.back().node.empty()) {
+            path_.push_back(makeEntryForDeepestLeftmostSubtree(path_.back().node));
+          }
+        }
+        else {
+          // Remove the last entry.
+          path_.pop_back();
+          // The entry before the last must be the leftmost subtree at level M of some other node.
+          // That node cannot be the root, because that would mean that M == 0, and we don't store 0-level entries in the path.
+          assert(path_.size() >= 2);
+          assert(path_.back().is_left_subtree);
+          assert(!path_[path_.size() - 2].is_left_subtree);
+          const std::size_t level_m = path_.back().level;
+          if (level_m > 1) {
+            // Replace the entry for the leftmost subtree at level M with an entry for the leftmost subtree at level (M-1).
+            path_.pop_back();
+            path_.push_back(Entry{ .node = path_.back().node.leftmostChild(level_m - 1), .level = level_m - 1, .is_left_subtree = true });
+            // Add an entry for the immediate right subtree of the new last entry:
+            path_.push_back(Entry{ .node = path_.back().node.rightChild(), .level = 1, .is_left_subtree = false });
+          }
+          else {
+            // Remove the entry for the leftmost subtree at level M == 1.
+            path_.pop_back();
+            // The new last entry must be the rightmost subtree at level L of some node. We replace it with
+            // an entry for the rightmost subtree at level (L+1).
+            path_.back().node.switchToRightChild();
+            ++path_.back().level;
+          }
+          // If the previously added entry is not a leaf, add an entry for its deepest leftmost subtree.
+          if (!path_.back().node.empty()) {
+            path_.push_back(makeEntryForDeepestLeftmostSubtree(path_.back().node));
+          }
+        }
       }
     }
 
@@ -915,6 +968,15 @@ namespace Detail_NS {
     void popBack();
 
    private:
+    // Constructs an entry for the deepest leftmost subtree of the given PathEntry.
+    // The behavior is unspecified if path_entry.empty().
+    // \return an entry for the deepest leftmost subtree of path_entry.
+    static constexpr Entry makeEntryForDeepestLeftmostSubtree(const PathEntry& path_entry) noexcept {
+      assert(!path_entry.empty());
+      const std::size_t level = findDeepestNodeForElements(1, path_entry.numBuckets()); // ceil(log2(num_buckets)).
+      return Entry{ .node = path_entry.leftmostChild(level), .level = level, .is_left_subtree = true };
+    }
+
     // Returns the current number of buckets in the tree.
     std::size_t numBuckets() const noexcept {
       if (path_.empty()) {
