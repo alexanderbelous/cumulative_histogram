@@ -845,7 +845,8 @@ namespace Detail_NS {
     };
 
     constexpr explicit CompressedPath(std::size_t bucket_capacity):
-      bucket_capacity_(bucket_capacity)
+      bucket_capacity_(bucket_capacity),
+      num_buckets_(0)
     {}
 
     constexpr std::span<const Entry> path() const noexcept { return path_; }
@@ -856,38 +857,36 @@ namespace Detail_NS {
       // TODO: double bucket_capacity if the tree is full.
       // If this is the first bucket, just add 1 entry.
 
-      // Special case - adding the first bucket.
-      if (path_.empty()) {
-        // If the path is empty, it means that the current tree has 0 nodes.
-        // The new entry will represent the immediate left subtree of the root.
-        path_.push_back(Entry{ .node = PathEntry(1, 1), .level = 1, .is_left_subtree = true });
+      // Special case - adding the first bucket. The tree still has 0 nodes
+      // after that, so we do nothing - the root is the last entry.
+      if (num_buckets_ == 0) {
+        ++num_buckets_;
         return;
       }
 
+      // Special case - adding the second bucket. The first node (root) is constructed,
+      // and we add an entry to the immediate right subtree of that node.
+      if (num_buckets_ == 1) {
+        // If the path is empty, it means that the current tree has 0 nodes.
+        // The new entry will represent the immediate right subtree of the root.
+        path_.push_back(Entry{ .node = PathEntry(0, 2).rightChild(), .level = 1, .is_left_subtree = false});
+        ++num_buckets_;
+        return;
+      }
+
+      // If there are at least 2 buckets, then the path must not be empty.
+      assert(!path_.empty());
       const Entry& last_entry = path_.back();
       const std::size_t level_was = last_entry.level;
       if (last_entry.is_left_subtree) {
-        // Special case - this is the only entry, and it represents the immediate left subtree of the root.
-        if (level_was == 1 && path_.size() == 1) {
-          // Delete the last entry.
-          path_.pop_back();
-          // Add an entry for the leftmost subtree of the immediate right subtree of the root.
-          // We know that the immediate right subtree of the root has 0 nodes, because the deleted
-          // entry was the immediate left subtree, but it was also a leaf, which means that the height
-          // of the right subtree cannot be greater than 1.
-          // PathEntry(1, 1) is the same as getRootEntry().rightChild().
-          path_.push_back(Entry{ .node = PathEntry(1, 1), .level = 1, .is_left_subtree = false });
-        }
-        else {
-          // The last entry is the leftmost subtree at level K of some node.
-          // If K > 1, then we replace it with an entry for the leftmost subtree at level (K-1) of the same node.
-          // Otherwise (if K == 1), we simply remove this entry.
-          switchToImmediateParent();
-          // Add another entry for the immediate right subtree of the new last entry.
-          addEntryForRightChild();
-          // Regardless of K, the new last entry should be nodeless now.
-          assert(path_.back().node.empty());
-        }
+        // The last entry is the leftmost subtree at level K of some node.
+        // If K > 1, then we replace it with an entry for the leftmost subtree at level (K-1) of the same node.
+        // Otherwise (if K == 1), we simply remove this entry.
+        switchToImmediateParent();
+        // Add another entry for the immediate right subtree of the new last entry.
+        addEntryForRightChild();
+        // Regardless of K, the new last entry should be nodeless now.
+        assert(path_.back().node.empty());
       }
       else {
         // OK, the last entry was the rightmost subtree of some node.
@@ -935,6 +934,7 @@ namespace Detail_NS {
           }
         }
       }
+      ++num_buckets_;
     }
 
     // Removes the last bucket.
@@ -1010,7 +1010,9 @@ namespace Detail_NS {
     }
 
     std::vector<Entry> path_;
+    // TODO: just store an entry for the root.
     std::size_t bucket_capacity_;
+    std::size_t num_buckets_;
   };
 
   // This function is intended to be called for trees at their full capacity.

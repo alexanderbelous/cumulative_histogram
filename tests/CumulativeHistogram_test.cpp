@@ -651,5 +651,41 @@ TEST(CumulativeHistogram, Complex) {
   }
 }
 
+TEST(CompressedPath, PushBack) {
+  using ::CumulativeHistogram_NS::Detail_NS::CompressedPath;
+  using ::CumulativeHistogram_NS::Detail_NS::PathEntry;
+  using ::CumulativeHistogram_NS::Detail_NS::countElementsInLeftmostSubtree;
+  using ::CumulativeHistogram_NS::Detail_NS::findDeepestNodeForElements;
+
+  const std::size_t bucket_capacity = 8;
+  std::size_t num_buckets = 0;
+  CompressedPath path{ bucket_capacity };
+
+  for (std::size_t i = 0; i < bucket_capacity; ++i) {
+    ++num_buckets;
+    path.pushBack();
+
+    // Check the path
+    const std::size_t root_level = findDeepestNodeForElements(num_buckets, bucket_capacity);
+    const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, root_level);
+    PathEntry tree{ 0, bucket_capacity_at_level };
+    for (const CompressedPath::Entry& entry : path.path()) {
+      EXPECT_FALSE(tree.empty());
+      if (entry.is_left_subtree) {
+        tree.switchToLeftmostChild(entry.level);
+      }
+      else {
+        tree.switchToRightmostChild(entry.level);
+      }
+      // Check the node.
+      EXPECT_EQ(tree.bucketFirst(), entry.node.bucketFirst());
+      EXPECT_EQ(tree.numBuckets(), entry.node.numBuckets());
+      EXPECT_EQ(tree.rootOffset(), entry.node.rootOffset());
+    }
+    // The path should end with a leaf node.
+    EXPECT_TRUE(tree.empty());
+  }
+}
+
 }
 }
