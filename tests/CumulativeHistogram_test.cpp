@@ -622,6 +622,36 @@ TEST(CumulativeHistogram, IsSubtree) {
   static_assert(findLeftmostSubtreeWithExactCapacity(6, 25) == kNotSubtree);
 }
 
+TEST(CumulativeHistogram, ComputeNewCapacityForFullTree) {
+  // Safe, but slow version: find the smallest number M, such that
+  //   M >= 2*num_elements
+  //   and (ceil(M/bucket_size) = 2*ceil(M/bucket_size)
+  //        or ceil(M/bucket_size) = 2*ceil(M/bucket_size)-1).
+  const auto computeNewCapacityNaive = [](std::size_t num_elements, std::size_t bucket_size) -> std::size_t {
+    // Edge case.
+    if (num_elements == 0) {
+      return 2;
+    }
+    const std::size_t num_buckets = Detail_NS::countBuckets(num_elements, bucket_size);
+    const std::size_t m_min = 2 * num_elements;
+    const std::size_t m_max = 2 * num_buckets * bucket_size;
+    for (std::size_t m = m_min; m < m_max; ++m) {
+      const std::size_t num_buckets_new = Detail_NS::countBuckets(m, bucket_size);
+      if (num_buckets_new == 2 * num_buckets || num_buckets_new == 2 * num_buckets - 1) {
+        return m;
+      }
+    }
+    return m_max;
+  };
+  for (std::size_t bucket_size = 2; bucket_size <= 16; ++bucket_size) {
+    constexpr std::size_t kMaxElements = 1024;
+    for (std::size_t num_elements = 0; num_elements < kMaxElements; ++num_elements) {
+      EXPECT_EQ(Detail_NS::computeNewCapacityForFullTree(num_elements),
+                computeNewCapacityNaive(num_elements, bucket_size));
+    }
+  }
+}
+
 TEST(CumulativeHistogram, Complex) {
   constexpr std::array<std::complex<float>, 10> kElements = {{
     {1.0, 0.0},

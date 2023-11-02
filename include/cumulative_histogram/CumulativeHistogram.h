@@ -505,30 +505,36 @@ namespace Detail_NS {
   }
 
   // Computes the new capacity for a full tree that currently stores the specified number of elements.
-  template<std::size_t BucketSize>
+  // \param capacity - capacity of the current tree.
+  // \return the smallest capacity M of the new tree, such that
+  //   M >= 2*capacity and the current tree is a subtree of the new tree.
+  // Time complexity: O(1).
   constexpr std::size_t computeNewCapacityForFullTree(std::size_t capacity) noexcept {
     // Special case: if the tree is currently empty, then the new capacity is simply 2.
     if (capacity == 0) {
       return 2;
     }
-    // Otherwise, there's at least 1 bucket already. Check if 2*Nmax elements still fit into a single bucket;
-    // if so, just double the current capacity - the number of buckets will remain 1.
-    if (capacity * 2 <= BucketSize) {
-      return capacity * 2;
-    }
-    // Otherwise, double the number of buckets.
-    // Compute the number of buckets in the current tree.
-    const std::size_t num_buckets = countBuckets(capacity, BucketSize);
+    // Otherwise, there's at least 1 bucket already, so we should increase the number of buckets
+    // from K to either 2K-1 or 2K (note that it can remain 1 if 2*Nmax elements also fit into a single bucket).
     // What is the smallest M such that
-    //     ceil(M/BucketSize) = 2*ceil(Nmax/BucketSize)
-    //   AND
-    //     M >= Nmax*2
+    //   M >= Nmax*2 AND
+    //   (ceil(M/BucketSize) == 2*ceil(Nmax/BucketSize) OR
+    //    ceil(M/BucketSize) == 2*ceil(Nmax/BucketSize) - 1)
     // ?
-    // The first inequality gives the lower and the upper bounds:
-    //   2*ceil(Nmax/BucketSize) * BucketSize - (BucketSize - 1) <= M <= 2*ceil(Nmax/BucketSize) * BucketSize
-    // Therefore, the answer is
-    //   max(2*ceil(Nmax/BucketSize) * BucketSize - (BucketSize - 1), Nmax*2)
-    return std::max((2 * num_buckets - 1) * BucketSize + 1, capacity * 2);
+    // 1) Let's consider the case when Nmax < BucketSize.
+    //   If 2*Nmax <= BucketSize, then the new number of buckets is also 1 = 2*1 - 1, so 2*Nmax is the answer.
+    //   Otherwise, ceil(2*Nmax/BucketSize) = 2, because 2*Nmax < 2*BucketSize, so thew new number of buckets
+    //   is 2 = 2*1, and 2*Nmax is the answer.
+    //   I.e. 2*Nmax is the answer in both cases.
+    // 2) Let's consider the case when Nmax >= BucketSize.
+    //   Let Nmax = a * BucketSize + b, where a > 0 and b < BucketSize.
+    //   If b == 0, then 2*Nmax = 2*a*BucketSize is obviously the answer.
+    //   Otherwise, ceil(2*Nmax/BucketSize) = ceil((2*a*BucketSize + 2*b)/BucketSize)
+    //            = 2a + ceil(2*b/BucketSize)
+    //     If 2*b < BucketSize, then the new number of buckets is 2a+1 = 2*(a+1) - 1;
+    //     Otherwise, the new number of buckets is 2a+2 = 2*(a+1)
+    //     Therefore, in both cases 2*Nmax is the answer.
+    return capacity * 2;
   }
 
   // Non-template base for TreeView.
@@ -1416,7 +1422,7 @@ template<Additive T>
 void CumulativeHistogram<T>::push_back(const T& value) {
   // Double the capacity if needed.
   if (size() == capacity()) {
-    reserve(Detail_NS::computeNewCapacityForFullTree<BucketSize>(capacity()));
+    reserve(Detail_NS::computeNewCapacityForFullTree(capacity()));
   }
   // Special case for the empty histogram.
   if (empty()) {
