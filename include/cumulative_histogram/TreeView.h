@@ -134,5 +134,40 @@ namespace Detail_NS
   private:
     T* root_;
   };
+
+  struct TreeViewData {
+    // The number of currently active buckets.
+    std::size_t num_buckets;
+    // Level of the currently effective tree.
+    std::size_t root_level;
+    // The number of buckets at the current level.
+    std::size_t bucket_capacity_at_level;
+    // The number of nodes at the current level.
+    std::size_t num_nodes_at_level;
+  };
+
+  constexpr TreeViewData getEffectiveTreeData(std::size_t num_elements,
+                                              std::size_t capacity,
+                                              std::size_t bucket_size) noexcept {
+    assert(bucket_size > 1);
+    assert(num_elements <= capacity);
+
+    // The maximum number of buckets the current tree can represent.
+    const std::size_t bucket_capacity = countBuckets(capacity, bucket_size);
+    // Number of buckets needed to represent the current elements.
+    const std::size_t num_buckets = countBuckets(num_elements, bucket_size);
+    // Level of the currently effective tree.
+    const std::size_t root_level = findDeepestNodeForElements(num_buckets, bucket_capacity);
+    // The number of buckets at the current level.
+    const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, root_level);
+    // The number of nodes at the current level.
+    const std::size_t num_nodes_at_level = countNodesInBucketizedTree(bucket_capacity_at_level);
+    return TreeViewData{
+      .num_buckets = num_buckets,
+      .root_level = root_level,
+      .bucket_capacity_at_level = bucket_capacity_at_level,
+      .num_nodes_at_level = num_nodes_at_level
+    };
+  }
 }
 }

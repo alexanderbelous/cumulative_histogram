@@ -129,5 +129,28 @@ namespace Detail_NS
     // Root of the tree.
     T* root_;
   };
+
+  struct FullTreeViewData {
+    // Depth of the root of the currently effective tree.
+    std::size_t root_level;
+    // The number of buckets at the current level.
+    std::size_t num_buckets_at_level;
+  };
+
+  constexpr FullTreeViewData getEffectiveFullTreeData(std::size_t num_elements,
+                                                      std::size_t capacity,
+                                                      std::size_t bucket_size) noexcept {
+    assert(bucket_size > 1);
+    assert(num_elements <= capacity);
+    // Number of buckets needed to represent the current elements.
+    const std::size_t num_buckets = countBuckets(num_elements, bucket_size);
+    // The maximum number of buckets the current tree can represent.
+    const std::size_t bucket_capacity = countBuckets(capacity, bucket_size);
+    // Level of the currently effective tree.
+    const std::size_t root_level = findDeepestNodeForElements(num_buckets, bucket_capacity);
+    // The number of buckets at the current level.
+    const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, root_level);
+    return FullTreeViewData{ root_level, bucket_capacity_at_level };
+  }
 }
 }

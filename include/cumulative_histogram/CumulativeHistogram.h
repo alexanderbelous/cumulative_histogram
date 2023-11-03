@@ -458,19 +458,14 @@ namespace Detail_NS {
     if (elements.empty()) {
       return;
     }
-    const std::size_t bucket_capacity = countBuckets(capacity, bucket_size);
-    const std::size_t max_num_nodes = countNodesInBucketizedTree(bucket_capacity);
-    assert(nodes.size() == max_num_nodes);
-    const std::size_t num_buckets = countBuckets(elements.size(), bucket_size);
 
-    const std::size_t level = findDeepestNodeForElements(num_buckets, bucket_capacity);
-    const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, level);
-    const std::size_t num_nodes_at_level = countNodesInBucketizedTree(bucket_capacity_at_level);
-    if (num_nodes_at_level == 0) {
+    assert(nodes.size() == countNodesInBucketizedTree(countBuckets(capacity, bucket_size)));
+    const TreeViewData tree_data = getEffectiveTreeData(elements.size(), capacity, bucket_size);
+    if (tree_data.num_nodes_at_level == 0) {
       return;
     }
-    const std::span<T> nodes_at_level = nodes.subspan(level, num_nodes_at_level);
-    TreeView<T> tree(nodes_at_level, num_buckets, bucket_capacity_at_level);
+    TreeView<T> tree{ nodes.subspan(tree_data.root_level, tree_data.num_nodes_at_level),
+                      tree_data.num_buckets, tree_data.bucket_capacity_at_level };
     buildBucketizedTreeImpl(elements, tree, bucket_size);
   }
 
@@ -478,64 +473,32 @@ namespace Detail_NS {
 
 template<Additive T>
 constexpr Detail_NS::TreeView<const T> CumulativeHistogram<T>::getTreeView() const noexcept {
-  // The maximum number of buckets the current tree can represent.
-  const std::size_t bucket_capacity = Detail_NS::countBuckets(capacity(), BucketSize);
-  // Number of buckets needed to represent the current elements.
-  const std::size_t num_buckets = Detail_NS::countBuckets(elements_.size(), BucketSize);
-  // Level of the currently effective tree.
-  const std::size_t root_level = Detail_NS::findDeepestNodeForElements(num_buckets, bucket_capacity);
-  // The number of buckets at the current level.
-  const std::size_t bucket_capacity_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
-  // The number of nodes at the current level.
-  const std::size_t num_nodes_at_level = Detail_NS::countNodesInBucketizedTree(bucket_capacity_at_level);
+  const Detail_NS::TreeViewData tree_data = Detail_NS::getEffectiveTreeData(size(), capacity(), BucketSize);
   return Detail_NS::TreeView<const T> {
-    std::span<const T> { nodes_.get() + root_level, num_nodes_at_level },
-      num_buckets, bucket_capacity_at_level
+    std::span<const T> { nodes_.get() + tree_data.root_level, tree_data.num_nodes_at_level },
+      tree_data.num_buckets, tree_data.bucket_capacity_at_level
   };
 }
 
 template<Additive T>
 constexpr Detail_NS::TreeView<T> CumulativeHistogram<T>::getMutableTreeView() noexcept {
-  // The maximum number of buckets the current tree can represent.
-  const std::size_t bucket_capacity = Detail_NS::countBuckets(capacity(), BucketSize);
-  // Number of buckets needed to represent the current elements.
-  const std::size_t num_buckets = Detail_NS::countBuckets(elements_.size(), BucketSize);
-  // Level of the currently effective tree.
-  const std::size_t root_level = Detail_NS::findDeepestNodeForElements(num_buckets, bucket_capacity);
-  // The number of buckets at the current level.
-  const std::size_t bucket_capacity_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
-  // The number of nodes at the current level.
-  const std::size_t num_nodes_at_level = Detail_NS::countNodesInBucketizedTree(bucket_capacity_at_level);
+  const Detail_NS::TreeViewData tree_data = Detail_NS::getEffectiveTreeData(size(), capacity(), BucketSize);
   return Detail_NS::TreeView<T> {
-    std::span<T> { nodes_.get() + root_level, num_nodes_at_level },
-      num_buckets, bucket_capacity_at_level
+    std::span<T> { nodes_.get() + tree_data.root_level, tree_data.num_nodes_at_level },
+      tree_data.num_buckets, tree_data.bucket_capacity_at_level
   };
 }
 
 template<Additive T>
 constexpr Detail_NS::TreeViewSimple<const T> CumulativeHistogram<T>::getTreeViewSimple() const noexcept {
-  // The maximum number of buckets the current tree can represent.
-  const std::size_t bucket_capacity = Detail_NS::countBuckets(capacity(), BucketSize);
-  // Number of buckets needed to represent the current elements.
-  const std::size_t num_buckets = Detail_NS::countBuckets(elements_.size(), BucketSize);
-  // Level of the currently effective tree.
-  const std::size_t root_level = Detail_NS::findDeepestNodeForElements(num_buckets, bucket_capacity);
-  // The number of buckets at the current level.
-  const std::size_t bucket_capacity_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
-  return Detail_NS::TreeViewSimple<const T> {nodes_.get() + root_level, bucket_capacity_at_level};
+  const Detail_NS::FullTreeViewData tree_data = Detail_NS::getEffectiveFullTreeData(size(), capacity(), BucketSize);
+  return Detail_NS::TreeViewSimple<const T> {nodes_.get() + tree_data.root_level, tree_data.num_buckets_at_level};
 }
 
 template<Additive T>
 constexpr Detail_NS::TreeViewSimple<T> CumulativeHistogram<T>::getMutableTreeViewSimple() noexcept {
-  // The maximum number of buckets the current tree can represent.
-  const std::size_t bucket_capacity = Detail_NS::countBuckets(capacity(), BucketSize);
-  // Number of buckets needed to represent the current elements.
-  const std::size_t num_buckets = Detail_NS::countBuckets(elements_.size(), BucketSize);
-  // Level of the currently effective tree.
-  const std::size_t root_level = Detail_NS::findDeepestNodeForElements(num_buckets, bucket_capacity);
-  // The number of buckets at the current level.
-  const std::size_t bucket_capacity_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
-  return Detail_NS::TreeViewSimple<T> {nodes_.get() + root_level, bucket_capacity_at_level};
+  const Detail_NS::FullTreeViewData tree_data = Detail_NS::getEffectiveFullTreeData(size(), capacity(), BucketSize);
+  return Detail_NS::TreeViewSimple<T> {nodes_.get() + tree_data.root_level, tree_data.num_buckets_at_level};
 }
 
 template<Additive T>
