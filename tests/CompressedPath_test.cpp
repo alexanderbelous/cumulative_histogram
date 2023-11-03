@@ -2,7 +2,71 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <ostream>
+
 namespace CumulativeHistogram_NS {
+namespace Detail_NS {
+
+static std::ostream& operator<<(std::ostream& stream, const PathEntry& entry) {
+  return stream << "{root_offset: " << entry.rootOffset()
+                << " bucket_first: " << entry.bucketFirst()
+                << " num_buckets: " << entry.numBuckets() << "}";
+}
+
+static std::ostream& operator<<(std::ostream& stream, const CompressedPath::Entry& entry) {
+  return stream << "{is_left_subtree: " << (entry.is_left_subtree ? "true" : "false")
+                << " level: " << entry.level
+                << " node: " << entry.node << "}";
+}
+
+static std::ostream& operator<<(std::ostream& stream, const CompressedPath& path) {
+  stream << "{num_buckets: " << path.numBuckets()
+         << " root_level: " << path.rootLevel()
+         << " path: [";
+  const std::span<const CompressedPath::Entry> entries = path.path();
+  auto iter = entries.begin();
+  if (iter != entries.end()) {
+    stream << *iter;
+    for (++iter; iter != entries.end(); ++iter) {
+      stream << ", " << *iter;
+    }
+  }
+  return stream << "]}";
+}
+
+static constexpr bool operator==(const PathEntry& lhs, const PathEntry& rhs) noexcept {
+  return lhs.bucketFirst() == rhs.bucketFirst() &&
+         lhs.numBuckets() == rhs.numBuckets() &&
+         lhs.rootOffset() == rhs.rootOffset();
+}
+
+static constexpr bool operator!=(const PathEntry& lhs, const PathEntry& rhs) noexcept {
+  return !(lhs == rhs);
+}
+
+static constexpr bool operator==(const CompressedPath::Entry& lhs, const CompressedPath::Entry& rhs) noexcept {
+  return lhs.is_left_subtree == rhs.is_left_subtree &&
+         lhs.level == rhs.level &&
+         lhs.node == rhs.node;
+}
+
+static constexpr bool operator!=(const CompressedPath::Entry& lhs, const CompressedPath::Entry& rhs) noexcept {
+  return !(lhs == rhs);
+}
+
+static constexpr bool operator==(const CompressedPath& lhs, const CompressedPath& rhs) noexcept {
+  const std::span<const CompressedPath::Entry> entries_lhs = lhs.path();
+  const std::span<const CompressedPath::Entry> entries_rhs = rhs.path();
+  return lhs.numBuckets() == rhs.numBuckets() &&
+         lhs.rootLevel() == rhs.rootLevel() &&
+         std::equal(entries_lhs.begin(), entries_lhs.end(), entries_rhs.begin(), entries_rhs.end());
+}
+
+static constexpr bool operator!=(const CompressedPath& lhs, const CompressedPath& rhs) noexcept {
+  return !(lhs == rhs);
+}
+
 namespace {
 
 TEST(CompressedPath, Build) {
@@ -30,9 +94,7 @@ TEST(CompressedPath, Build) {
           tree.switchToRightmostChild(entry.level);
         }
         // Check the node.
-        EXPECT_EQ(tree.bucketFirst(), entry.node.bucketFirst());
-        EXPECT_EQ(tree.numBuckets(), entry.node.numBuckets());
-        EXPECT_EQ(tree.rootOffset(), entry.node.rootOffset());
+        EXPECT_EQ(tree, entry.node);
       }
       // The path should end with a leaf node.
       EXPECT_TRUE(tree.empty());
@@ -71,14 +133,37 @@ TEST(CompressedPath, PushBack) {
         tree.switchToRightmostChild(entry.level);
       }
       // Check the node.
-      EXPECT_EQ(tree.bucketFirst(), entry.node.bucketFirst());
-      EXPECT_EQ(tree.numBuckets(), entry.node.numBuckets());
-      EXPECT_EQ(tree.rootOffset(), entry.node.rootOffset());
+      EXPECT_EQ(tree, entry.node);
     }
     // The path should end with a leaf node.
     EXPECT_TRUE(tree.empty());
   }
 }
 
+TEST(CompressedPath, PopBack) {
+  // The test CompressedPath.PushBack already checks that CompressedPath::pushBack() works
+  // correctly, so it's sufficint to check that calling popBack() immediately after pushBack()
+  // is a no-op.
+  using ::CumulativeHistogram_NS::Detail_NS::CompressedPath;
+  constexpr std::size_t kBucketCapacityMin = 1;
+  constexpr std::size_t kBucketCapacityMax = 128;
+  for (std::size_t bucket_capacity = kBucketCapacityMin; bucket_capacity <= kBucketCapacityMax; ++bucket_capacity) {
+    CompressedPath path{ bucket_capacity };
+    for (std::size_t i = 0; i < bucket_capacity; ++i) {
+      // Make a temporary copy of the path.
+      const CompressedPath path_was = path;
+      // Add a bucket.
+      path.pushBack();
+      // Immediately remove the last bucket.
+      path.popBack();
+      // Check that the path is now in the same state as it was before pushBack().
+      EXPECT_EQ(path, path_was);
+      // Add a bucket again.
+      path.pushBack();
+    }
+  }
+}
+
+}
 }
 }
