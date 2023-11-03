@@ -19,12 +19,6 @@
 
 namespace CumulativeHistogram_NS {
 
-// Forward declarations.
-namespace Detail_NS {
-  template<class T>
-  class TreeView;
-}
-
 // Defines a named requirement for an additive type.
 //
 // This is similar to an additive group in mathematics, except that this concept
