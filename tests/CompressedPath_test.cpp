@@ -1,4 +1,5 @@
 #include <cumulative_histogram/CompressedPath.h>
+#include <cumulative_histogram/TreeView.h>
 
 #include <gtest/gtest.h>
 
@@ -70,6 +71,51 @@ static constexpr bool operator!=(const CompressedPath& lhs, const CompressedPath
 }
 
 namespace {
+
+// Like TreeView, but instead of storing a pointer to the root node, it stores its index.
+class TreeViewNumeric : public TreeViewBase {
+public:
+  // Expects that 0 < num_buckets <= bucket_capacity.
+  constexpr TreeViewNumeric(std::size_t num_buckets,
+                            std::size_t bucket_capacity) noexcept :
+    TreeViewNumeric(findDeepestNodeForElements(num_buckets, bucket_capacity), num_buckets, bucket_capacity)
+  {}
+
+  constexpr std::size_t root() const {
+    return root_;
+  }
+
+  constexpr void switchToLeftChild() noexcept {
+    root_ += TreeViewBase::switchToLeftChild();
+  }
+
+  constexpr TreeViewNumeric leftChild() const noexcept {
+    TreeViewNumeric tree = *this;
+    tree.switchToLeftChild();
+    return tree;
+  }
+
+  constexpr void switchToRightChild() noexcept {
+    root_ += TreeViewBase::switchToRightChild();
+  }
+
+  constexpr TreeViewNumeric rightChild() const noexcept {
+    TreeViewNumeric tree = *this;
+    tree.switchToRightChild();
+    return tree;
+  }
+
+private:
+  // Expects that 0 < num_buckets <= bucket_capacity.
+  constexpr TreeViewNumeric(std::size_t root_level,
+                            std::size_t num_buckets,
+                            std::size_t bucket_capacity) noexcept :
+    TreeViewBase(num_buckets, countElementsInLeftmostSubtree(bucket_capacity, root_level)),
+    root_(root_level)
+  {}
+
+  std::size_t root_;
+};
 
 TEST(CompressedPath, Build) {
   using ::CumulativeHistogram_NS::Detail_NS::CompressedPath;
@@ -162,6 +208,31 @@ TEST(CompressedPath, PopBack) {
       EXPECT_EQ(path, path_was);
       // Add a bucket again.
       path.pushBack();
+    }
+  }
+}
+
+TEST(CompressedPath, FindTreeToExtendAfterPushBack) {
+  constexpr std::size_t kBucketCapacityMin = 1;
+  constexpr std::size_t kBucketCapacityMax = 128;
+  for (std::size_t bucket_capacity = kBucketCapacityMin; bucket_capacity <= kBucketCapacityMax; ++bucket_capacity) {
+    CompressedPath path{ bucket_capacity };
+    for (std::size_t num_buckets = 0; num_buckets < bucket_capacity;) {
+      // Add a bucket.
+      path.pushBack();
+      ++num_buckets;
+      // Find the topmost rightmost subtree at full capacity (time complexity: O(log(num_buckets)).
+      TreeViewNumeric tree(num_buckets, bucket_capacity);
+      while (!tree.empty() && tree.numBuckets() != tree.bucketCapacity()) {
+        tree.switchToRightChild();
+      }
+      // Traversing the tree this way must lead to some subtree (possibly a leaf) at full capacity.
+      EXPECT_EQ(tree.numBuckets(), tree.bucketCapacity());
+      // CompressedPath::findTreeToExtendAfterPushBack() must return the same subtree.
+      const PathEntry actual = path.findTreeToExtendAfterPushBack();
+      EXPECT_EQ(path.rootLevel() + actual.rootOffset(), tree.root());
+      EXPECT_EQ(actual.bucketFirst(), tree.bucketFirst());
+      EXPECT_EQ(actual.numBuckets(), tree.numBuckets());
     }
   }
 }
