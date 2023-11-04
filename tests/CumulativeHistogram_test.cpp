@@ -269,6 +269,33 @@ TEST(CumulativeHistogram, PushBackZeroInitialized) {
   EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
+TEST(CumulativeHistogram, PushBackNoReallocation) {
+  constexpr std::size_t kNumElementsMin = 1;
+  constexpr std::size_t kNumElementsMax = 128;
+  for (std::size_t capacity = kNumElementsMin; capacity < kNumElementsMax; ++capacity) {
+    CumulativeHistogram<unsigned int> histogram;
+    histogram.reserve(capacity);
+    for (std::size_t num_elements = 0; num_elements < capacity;) {
+      // Assign histogram[i] = i+1;
+      const unsigned int value = static_cast<unsigned int>(num_elements + 1);
+      histogram.push_back(value);
+      ++num_elements;
+      // Check the number of elements.
+      EXPECT_EQ(histogram.size(), num_elements);
+      // Check that the capacity hasn't changed.
+      EXPECT_EQ(histogram.capacity(), capacity);
+      // Check the elements.
+      for (std::size_t i = 0; i < num_elements; ++i) {
+        EXPECT_EQ(histogram.element(i), static_cast<unsigned int>(i + 1));
+      }
+      // Check the total sum (1 + 2 + 3 + ... + N == N * (N+1) / 2).
+      EXPECT_EQ(histogram.totalSum(), num_elements * (num_elements + 1) / 2);
+      // Check the prefix sums.
+      EXPECT_TRUE(CheckPrefixSums(histogram));
+    }
+  }
+}
+
 TEST(CumulativeHistogram, PushBackNonZero) {
   constexpr std::array<unsigned int, 17> kElements =
     { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17 };
