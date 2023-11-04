@@ -21,7 +21,8 @@ static std::ostream& operator<<(std::ostream& stream, const CompressedPath::Entr
 }
 
 static std::ostream& operator<<(std::ostream& stream, const CompressedPath& path) {
-  stream << "{num_buckets: " << path.numBuckets()
+  stream << "{bucket_capacity: " << path.bucketCapacity()
+         << " num_buckets: " << path.numBuckets()
          << " root_level: " << path.rootLevel()
          << " path: [";
   const std::span<const CompressedPath::Entry> entries = path.path();
@@ -58,7 +59,8 @@ static constexpr bool operator!=(const CompressedPath::Entry& lhs, const Compres
 static constexpr bool operator==(const CompressedPath& lhs, const CompressedPath& rhs) noexcept {
   const std::span<const CompressedPath::Entry> entries_lhs = lhs.path();
   const std::span<const CompressedPath::Entry> entries_rhs = rhs.path();
-  return lhs.numBuckets() == rhs.numBuckets() &&
+  return lhs.bucketCapacity() == rhs.bucketCapacity() &&
+         lhs.numBuckets() == rhs.numBuckets() &&
          lhs.rootLevel() == rhs.rootLevel() &&
          std::equal(entries_lhs.begin(), entries_lhs.end(), entries_rhs.begin(), entries_rhs.end());
 }

@@ -116,6 +116,12 @@ namespace Detail_NS
     // Time complexity: O(logN), where N is the new bucket capacity.
     inline void reserve(std::size_t bucket_capacity);
 
+    // Sets the number of buckets to zero.
+    // The path becomes empty after this call; capacity remains unchanged.
+    // Time complexity: O(logN).
+    // TODO: make it O(1) - there's no need to zero out Entries.
+    inline void clear();
+
     // Modifies the path so that it leads to the bucket following the one that the path currently leads to.
     // Time complexity: O(1).
     inline void pushBack();
@@ -123,6 +129,10 @@ namespace Detail_NS
     // Modifies the path so that it leads to the bucket preceding the one that the path currently leads to.
     // Time complexity: O(1).
     inline void popBack();
+
+    // \return the maximum number of buckets that the tree can represent.
+    // Time complexity: O(1).
+    constexpr std::size_t bucketCapacity() const noexcept;
 
     // Returns the depth of the root of the currently effective tree.
     // Time complexity: O(1).
@@ -247,6 +257,12 @@ namespace Detail_NS
     build(num_buckets_, bucket_capacity);
   }
 
+  void CompressedPath::clear() {
+    path_.clear();
+    num_buckets_ = 0;
+    root_level_ = findDeepestNodeForElements(0, bucket_capacity_);
+  }
+
   void CompressedPath::pushBack() {
     // Special case - adding the first bucket. The tree still has 0 nodes
     // after that, so we only need to increase the number of buckets.
@@ -311,6 +327,10 @@ namespace Detail_NS
       switchToDeepestRightmostChild();
     }
     --num_buckets_;
+  }
+
+  constexpr std::size_t CompressedPath::bucketCapacity() const noexcept {
+    return bucket_capacity_;
   }
 
   constexpr std::size_t CompressedPath::rootLevel() const noexcept {
