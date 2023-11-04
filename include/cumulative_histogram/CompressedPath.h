@@ -144,9 +144,18 @@ namespace Detail_NS
     // Time complexity: O(1).
     inline void switchToImmediateParent() noexcept;
 
+    // Modifies the path so that it leads to the immediate left child of the node that it currently leads to.
+    // Time complexity: O(1).
+    inline void switchToImmediateLeftChild() noexcept;
+
     // Modifies the path so that it leads to the immediate right child of the node that it currently leads to.
     // Time complexity: O(1).
-    inline void addEntryForRightChild() noexcept;
+    inline void switchToImmediateRightChild() noexcept;
+
+    // Modifies the path so that it leads to the deepest rightmost child of the node that it currently leads to.
+    // If the node that the path currently leads to is a leaf, the function has no effect.
+    // Time complexity: O(1).
+    inline void switchToDeepestRightmostChild() noexcept;
 
     // Constructs an entry for the deepest leftmost subtree of the given PathEntry.
     // The behavior is unspecified if path_entry.empty().
@@ -256,7 +265,7 @@ namespace Detail_NS
       // Otherwise (if K == 1), we simply remove this entry.
       switchToImmediateParent();
       // Add another entry for the immediate right subtree of the new last entry.
-      addEntryForRightChild();
+      switchToImmediateRightChild();
     }
     else {
       // OK, the last entry is the rightmost subtree of some node.
@@ -270,7 +279,7 @@ namespace Detail_NS
       // If the last entry is a left subtree of some node, append an entry for its immediate right subtree.
       // Otherwise, if the last entry is a right subtree at level L of some node, replace it with an entry
       // for the right subtree at level L+1.
-      addEntryForRightChild();
+      switchToImmediateRightChild();
       // If the previously added entry is not a leaf, add an entry for its deepest leftmost subtree.
       if (!path_.back().node.empty()) {
         path_.push_back(makeEntryForDeepestLeftmostSubtree(path_.back().node));
@@ -285,22 +294,23 @@ namespace Detail_NS
 
   void CompressedPath::popBack() {
     assert(num_buckets_ != 0);
+    // The path can be empty if the tree currently stores exactly 1 bucket.
+    if (!path_.empty()) {
+      // If the last entry is a leftmost subtree of some node, remove that entry.
+      if (path_.back().is_left_subtree) {
+        path_.pop_back();
+      }
+      // Now either the path is empty, or it ends with an entry for the rightmost subtree of some node.
+      // Switch to the immediate parent of that node.
+      switchToImmediateParent();
+      // If the path is now empty, update the root so that it refers to its immediate left child.
+      // Otherwise, switch to the immediate left child of the last entry.
+      switchToImmediateLeftChild();
+      // Now either the path is empty, or it ends with an entry for the leftmost subtree of some node.
+      // If the new last entry is not a leaf, add an entry for its deepest rightmost subtree.
+      switchToDeepestRightmostChild();
+    }
     --num_buckets_;
-    build(num_buckets_, bucket_capacity_);
-    // if ends with a right subtree:
-    //   switchToImmediateParent();
-    //   if the path is now empty:
-    //     increment root level;
-    //   else:
-    //     addEntryForLeftChild();
-    //   // The height of the left subtree may exceed the height of the right subtree by 1,
-    //   // so we might need to add one more entry.
-    //   addEntryForDeepestRightmostSubtree();
-    // else:
-    //   remove the last entry;
-    //   switch to the immediate parent
-    //   add an entry for the left child or update the root if the path is now empty
-    //   add an entry for the deepest rightmost subtree.
   }
 
   constexpr std::size_t CompressedPath::rootLevel() const noexcept {
@@ -347,26 +357,46 @@ namespace Detail_NS
       return;
     }
     Entry& last_entry = path_.back();
-    if (last_entry.is_left_subtree) {
-      if (last_entry.level > 1) {
-        // TODO: implement switching to the parent for the only entry in the path.
-        assert(path_.size() >= 2);
-        // Replace the entry for the leftmost subtree at level M with an entry for the leftmost subtree at level (M-1).
-        last_entry.node = path_[path_.size() - 2].node.leftmostChild(last_entry.level - 1);
-        --last_entry.level;
+    if (last_entry.level > 1) {
+      // Construct an entry for the immediate parent.
+      // Initialize with the previous entry.
+      PathEntry new_entry = (path_.size() >= 2) ? path_[path_.size() - 2].node : getRootEntry();
+      // Switch to the leftmost (rightmost) subtree at level M-1.
+      if (last_entry.is_left_subtree) {
+        new_entry.switchToLeftmostChild(last_entry.level - 1);
       }
       else {
-        // Remove the entry for the leftmost subtree at level M == 1.
-        path_.pop_back();
+        new_entry.switchToRightmostChild(last_entry.level - 1);
       }
+      last_entry.node = new_entry;
+      --last_entry.level;
     }
     else {
-      // TODO: implement.
-      assert(false);
+      // Just remove the entry for the leftmost/rightmost subtree at level M == 1.
+      path_.pop_back();
     }
   }
 
-  void CompressedPath::addEntryForRightChild() noexcept {
+  void CompressedPath::switchToImmediateLeftChild() noexcept {
+    // Special case: switching to the immediate left subtree of the root.
+    // In this case instead of adding an entry we just update the root.
+    if (path_.empty()) {
+      ++root_level_;
+      return;
+    }
+    Entry& last_entry = path_.back();
+    // The last entry must not be for a leaf node.
+    assert(!last_entry.node.empty());
+    if (last_entry.is_left_subtree) {
+      last_entry.node.switchToLeftChild();
+      ++last_entry.level;
+    }
+    else {
+      path_.push_back(Entry{ .node = last_entry.node.leftChild(), .level = 1, .is_left_subtree = true });
+    }
+  }
+
+  void CompressedPath::switchToImmediateRightChild() noexcept {
     // Special case: adding an entry for the immediate right subtree of the root.
     if (path_.empty()) {
       path_.push_back(Entry{ .node = getRootEntry().rightChild(), .level = 1, .is_left_subtree = false});
@@ -384,11 +414,43 @@ namespace Detail_NS
     }
   }
 
+  void CompressedPath::switchToDeepestRightmostChild() noexcept {
+    if (path_.empty()) {
+      PathEntry entry = getRootEntry();
+      if (entry.empty()) {
+        return;
+      }
+      // The rightmost subtree at level K has floor(N / 2^K) buckets, where N is the number of buckets in the current tree.
+      // Therefore, the maximum valid level is such Kmax that floor(N / 2^Kmax) == 1.
+      // I.e. Kmax = floor(log2(N)): this way, N >= 2^Kmax, but also N < 2^(Kmax+1).
+      const std::size_t level = floorLog2(entry.numBuckets());
+      entry.switchToRightmostChild(level);
+      path_.push_back(Entry{ .node = entry, .level = level, .is_left_subtree = false });
+    }
+    else {
+      Entry& last_entry = path_.back();
+      if (last_entry.node.empty()) {
+        return;
+      }
+      const std::size_t level = floorLog2(last_entry.node.numBuckets());
+      if (last_entry.is_left_subtree) {
+        path_.push_back(Entry{ .node = last_entry.node.rightmostChild(level), .level = level, .is_left_subtree = false });
+      }
+      else {
+        last_entry.node.switchToRightmostChild(level);
+        last_entry.level += level;
+      }
+    }
+  }
+
   constexpr
   CompressedPath::Entry
   CompressedPath::makeEntryForDeepestLeftmostSubtree(const PathEntry& path_entry) noexcept {
     assert(!path_entry.empty());
-    const std::size_t level = findDeepestNodeForElements(1, path_entry.numBuckets());  // ceil(log2(num_buckets)).
+    // The leftmost subtree at level K has ceil(N / 2^K) buckets, where N is the number of buckets in the current tree.
+    // The maximum valid level is the smallest Kmax such that ceil(N / 2^Kmax) == 1.
+    // I.e. Kmax = ceil(log2(N)).
+    const std::size_t level = ceilLog2(path_entry.numBuckets());
     return Entry{ .node = path_entry.leftmostChild(level), .level = level, .is_left_subtree = true };
   }
 
