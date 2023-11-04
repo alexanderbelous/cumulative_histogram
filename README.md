@@ -14,7 +14,7 @@ individual elements and computing prefix sums, but not for adding/removing eleme
 | Array of elements    | O(1)         | O(1)            | O(N)        | O(N)         | O(1)+      | O(1)      | O(N)             |
 | Array of prefix sums | O(1)         | O(N)            | O(1)        | O(logN)      | O(1)+      | O(1)      | O(N)             |
 | Fenwick tree         | O(logN)      | O(logN)         | O(logN)     | O(logN)      | N/A        | N/A       | O(N)             |
-| CumulativeHistogram  | O(1)         | O(logN)         | O(logN)     | O(logN)      | O(logN)+   | O(1)      | O(N)             |
+| CumulativeHistogram  | O(1)         | O(logN)         | O(logN)     | O(logN)      | O(1)+      | O(1)      | O(N)             |
 
 # Basic usage
 ```cpp
