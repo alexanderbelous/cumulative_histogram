@@ -152,5 +152,20 @@ namespace Detail_NS
     const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, root_level);
     return FullTreeViewData{ root_level, bucket_capacity_at_level };
   }
+
+  // Constructs a TreeViewSimple for the currently effective tree.
+  // \param nodes - pointer to the nodes array of the main tree.
+  // \param num_elements - the number of currently active elements.
+  // \param capacity - the maximum number of elements the tree can represent.
+  // \param bucket_size - the number of elements per bucket.
+  // \return a TreeViewSimple for the currently effective tree representing `num_elements` elements.
+  template<class T>
+  constexpr TreeViewSimple<T> makeFullTreeView(T* nodes,
+                                               std::size_t num_elements,
+                                               std::size_t capacity,
+                                               std::size_t bucket_size) noexcept {
+    const FullTreeViewData tree_data = getEffectiveFullTreeData(num_elements, capacity, bucket_size);
+    return TreeViewSimple<T> {nodes + tree_data.root_level, tree_data.num_buckets_at_level};
+  }
 }
 }

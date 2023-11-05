@@ -266,12 +266,6 @@ class CumulativeHistogram {
   // Returns an mutable TreeView for the currently effective tree.
   constexpr Detail_NS::TreeView<T> getMutableTreeView() noexcept;
 
-  // Returns an immutable TreeViewSimple for the currently effective tree.
-  constexpr Detail_NS::TreeViewSimple<const T> getTreeViewSimple() const noexcept;
-
-  // Returns an immutable TreeViewSimple for the currently effective tree.
-  constexpr Detail_NS::TreeViewSimple<T> getMutableTreeViewSimple() noexcept;
-
   // Returns the index of the effective root node.
   // * nodes_[getRootIndex()] stores the sum of elements from the left subtree -
   //   but only if there is a left subtree (i.e. if there current tree has at least 1 node).
@@ -384,7 +378,7 @@ namespace Detail_NS {
     // ?
     // 1) Let's consider the case when Nmax < BucketSize.
     //   If 2*Nmax <= BucketSize, then the new number of buckets is also 1 = 2*1 - 1, so 2*Nmax is the answer.
-    //   Otherwise, ceil(2*Nmax/BucketSize) = 2, because 2*Nmax < 2*BucketSize, so thew new number of buckets
+    //   Otherwise, ceil(2*Nmax/BucketSize) = 2, because 2*Nmax < 2*BucketSize, so the new number of buckets
     //   is 2 = 2*1, and 2*Nmax is the answer.
     //   I.e. 2*Nmax is the answer in both cases.
     // 2) Let's consider the case when Nmax >= BucketSize.
@@ -398,29 +392,25 @@ namespace Detail_NS {
     return capacity * 2;
   }
 
-  // This function is intended to be called for trees at their full capacity.
   // Computes the total sum of elements of a tree which is at its full capacity.
-  // \param elements - elements represented by the tree.
-  // \param nodes - node of the tree.
+  // \param elements - elements to sum.
+  // \param tree - auxiliary tree for `elements`.
   // The behavior is undefined if
-  //   elements.empty() || nodes.size() != countNodesInBucketizedTree(countBuckets(elements.size(), BucketSize))
+  //   elements.empty() || elements.size() != tree.numBuckets() * bucket_size
   // \returns the total sum of elements from `elements`.
   // Time complexity: O(logN), where N = elements.size().
-  template<class T, std::size_t BucketSize>
-  constexpr T sumElementsOfFullTree(std::span<const T> elements, std::span<const T> nodes) {
+  template<class T>
+  constexpr T sumElementsOfFullTree(std::span<const T> elements, TreeViewSimple<const T> tree, std::size_t bucket_size) {
     assert(!elements.empty());
-    const std::size_t num_buckets = countBuckets(elements.size(), BucketSize);
-    assert(nodes.size() == countNodesInBucketizedTree(num_buckets));
-    TreeViewSimple<const T> tree(nodes.data(), num_buckets);
+    assert(elements.size() == tree.numBuckets() * bucket_size);
     T result{};
     while (!tree.empty()) {
       result += tree.root();
       tree.switchToRightChild();
     }
-    // The last bucket contains at most BucketSize elements.
-    // TODO: AFAIU, tree.bucketFirst() == num_buckets - 1, so there's no need to track it.
-    const std::size_t first = tree.bucketFirst() * BucketSize;
-    return std::accumulate(elements.begin() + first, elements.end(), std::move(result));
+    // Add elements from the last bucket.
+    const std::span<const T> last_bucket = elements.last(bucket_size);
+    return std::accumulate(last_bucket.begin(), last_bucket.end(), std::move(result));
   }
 
   // Initializes the nodes of the specified tree according to the values of the given elements.
@@ -458,7 +448,6 @@ namespace Detail_NS {
     if (elements.empty()) {
       return;
     }
-
     assert(nodes.size() == countNodesInBucketizedTree(countBuckets(capacity, bucket_size)));
     const TreeViewData tree_data = getEffectiveTreeData(elements.size(), capacity, bucket_size);
     if (tree_data.num_nodes_at_level == 0) {
@@ -487,18 +476,6 @@ constexpr Detail_NS::TreeView<T> CumulativeHistogram<T>::getMutableTreeView() no
     std::span<T> { nodes_.get() + tree_data.root_level, tree_data.num_nodes_at_level },
       tree_data.num_buckets, tree_data.bucket_capacity_at_level
   };
-}
-
-template<Additive T>
-constexpr Detail_NS::TreeViewSimple<const T> CumulativeHistogram<T>::getTreeViewSimple() const noexcept {
-  const Detail_NS::FullTreeViewData tree_data = Detail_NS::getEffectiveFullTreeData(size(), capacity(), BucketSize);
-  return Detail_NS::TreeViewSimple<const T> {nodes_.get() + tree_data.root_level, tree_data.num_buckets_at_level};
-}
-
-template<Additive T>
-constexpr Detail_NS::TreeViewSimple<T> CumulativeHistogram<T>::getMutableTreeViewSimple() noexcept {
-  const Detail_NS::FullTreeViewData tree_data = Detail_NS::getEffectiveFullTreeData(size(), capacity(), BucketSize);
-  return Detail_NS::TreeViewSimple<T> {nodes_.get() + tree_data.root_level, tree_data.num_buckets_at_level};
 }
 
 template<Additive T>
@@ -791,9 +768,9 @@ void CumulativeHistogram<T>::push_back(const T& value) {
     // This has O(logN) time complexity in the worst case, but, fortunately, the amortized time complexity is O(1).
     const std::size_t element_first = subtree_to_extend.bucketFirst() * BucketSize;
     const std::span<const T> subtree_elements = std::span<const T>(elements_).subspan(element_first);
-    const std::span<const T> subtree_nodes{ subtree_root, subtree_to_extend.numNodes() };
+    const Detail_NS::TreeViewSimple<const T> subtree(subtree_root, subtree_to_extend.numBuckets());
     // Construct the new node.
-    *new_node = Detail_NS::sumElementsOfFullTree<T, BucketSize>(subtree_elements, subtree_nodes);
+    *new_node = Detail_NS::sumElementsOfFullTree<T>(subtree_elements, subtree, BucketSize);
   }
   elements_.push_back(value);
   path_to_last_bucket_.pushBack();
@@ -869,7 +846,8 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
   // optimizes the best-case time complexity at the cost of greater average time complexity.
   const size_type k_plus_one = k + 1;
   // Tree representing the elements [0; N).
-  Detail_NS::TreeViewSimple<T> tree = getMutableTreeViewSimple();
+  Detail_NS::TreeViewSimple<T> tree =
+    Detail_NS::makeFullTreeView<T>(nodes_.get(), size(), capacity(), BucketSize);
   while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [first; middle).
     const std::size_t middle = tree.pivot() * BucketSize;
@@ -907,7 +885,8 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
   }
   T result {};
   // Tree representing the elements [0; N).
-  Detail_NS::TreeViewSimple<const T> tree = getTreeViewSimple();
+  Detail_NS::TreeViewSimple<const T> tree =
+    Detail_NS::makeFullTreeView<const T>(nodes_.get(), size(), capacity(), BucketSize);
   while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [first; middle).
     const std::size_t middle = tree.pivot() * BucketSize;
