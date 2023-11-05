@@ -73,10 +73,7 @@ namespace Detail_NS
    public:
     struct Entry {
       PathEntry node;
-      std::size_t level; // : std::numeric_limits<std::size_t>::digits;
-      // TODO: store instead a single bool in CompressedPath itself, indicating if the last entry
-      // is a left subtree or a right subtree. The rest can be deduced.
-      bool is_left_subtree; // : 1;
+      std::size_t level;
     };
 
     // Constructs an empty path.
@@ -141,6 +138,11 @@ namespace Detail_NS
     // Returns the number of currently active buckets in the tree.
     // Time complexity: O(1).
     constexpr std::size_t numBuckets() const noexcept;
+
+    // \return true if the last entry in the path is the leftmost subtree of some node, false otherwise.
+    //         Returns true if the path is empty.
+    // Time complexity: O(1).
+    constexpr bool lastEntryIsLeftSubtree() const noexcept;
 
     // Finds the subtree that will need to be extended after push_back().
     // \return a PathEntry to the subtree that will need to be extended after push_back(), i.e. the largest
@@ -236,7 +238,7 @@ namespace Detail_NS
         ++node_level;
       }
       else {
-        path_.push_back(Entry{ .node = tree, .level = node_level, .is_left_subtree = is_adding_left_subtree });
+        path_.push_back(Entry{ .node = tree, .level = node_level });
         is_adding_left_subtree = !is_adding_left_subtree;
         node_level = 1;
       }
@@ -249,7 +251,7 @@ namespace Detail_NS
       }
     }
     // Add an entry for the last node.
-    path_.push_back(Entry{ .node = tree, .level = node_level, .is_left_subtree = is_adding_left_subtree });
+    path_.push_back(Entry{ .node = tree, .level = node_level });
   }
 
   void CompressedPath::reserve(std::size_t bucket_capacity) {
@@ -275,7 +277,7 @@ namespace Detail_NS
     // then the path must not be empty; if there is exactly 1 bucket, then we can treat
     // the *fake* root node as the left subtree of the new root node that will be added after push_back().
     //assert(!path_.empty());
-    if (path_.empty() || path_.back().is_left_subtree) {
+    if (path_.empty() || lastEntryIsLeftSubtree()) {
       // The last entry is the leftmost subtree at level K of some node.
       // If K > 1, then we replace it with an entry for the leftmost subtree at level (K-1) of the same node.
       // Otherwise (if K == 1), we simply remove this entry.
@@ -313,7 +315,7 @@ namespace Detail_NS
     // The path can be empty if the tree currently stores exactly 1 bucket.
     if (!path_.empty()) {
       // If the last entry is a leftmost subtree of some node, remove that entry.
-      if (path_.back().is_left_subtree) {
+      if (lastEntryIsLeftSubtree()) {
         path_.pop_back();
       }
       // Now either the path is empty, or it ends with an entry for the rightmost subtree of some node.
@@ -346,23 +348,38 @@ namespace Detail_NS
     //return last_entry.node.bucketFirst() + last_entry.node.numBuckets();
   }
 
+  constexpr bool CompressedPath::lastEntryIsLeftSubtree() const noexcept {
+    // 1. By definition, path_[0] (if it exists) is always the right subtree of the currently
+    // effective tree - otherwise, the last bucket would be in the left subtree, which means that the right
+    // subtree is empty, which means that left subtree should be the effective tree.
+    // 2. path_[1] (if it exists) is always the left subtree of the path_[0] .
+    // 3. path_[2] (if it exists) is always the right subtree of the path_[1].
+    // 4. And so on. path_[i] (if it exits) is the left subtree of path_[i-1] if i is odd,
+    //    otherwise it's the right subtree.
+    // 5. Therefore, path_[path_.size() - 1] is the left subtree if path.size() is even, otherwise it's
+    //    the right subtree.
+    // 6. It doesn't really matter what the function returns if the path is empty, but let's return true -
+    //    if the path is empty, then there is at most 1 bucket, which is the left child of the root of the
+    //    currently effective tree.
+    return path_.size() % 2 == 0;
+  }
+
   PathEntry CompressedPath::findTreeToExtendAfterPushBack() noexcept {
     assert(num_buckets_ > 0);
-    // Special case - if there is only 1 bucket, then the path is empty (because the tree has 0 nodes),
-    // and the tree that will need to be extended is the only leaf.
-    if (path_.empty()) {
+    // 1. Edge case - if there is only 1 bucket, then the path is empty (because the tree has 0 nodes),
+    //    and the tree that will need to be extended is the only leaf.
+    // 2. If there is exactly 1 entry in the path, then it must be the rightmost subtree (at some level K) of
+    //    the root of the currently effective tree. In this case we should extend the currently effective tree.
+    if (path_.size() < 2) {
       return getRootEntry();
     }
     // Otherwise, if the last entry is a left subtree of some node, then this leaf is the subtree that will
     // need to be extended.
-    if (path_.back().is_left_subtree) {
+    if (lastEntryIsLeftSubtree()) {
       return path_.back().node;
     }
     // Otherwise, the last entry is the rightmost subtree (at level K) of some node, which means that the tree
     // that will need to be extended is that parent node.
-    if (path_.size() == 1) {
-      return getRootEntry();
-    }
     return path_[path_.size() - 2].node;
   }
 
@@ -382,7 +399,7 @@ namespace Detail_NS
       // Initialize with the previous entry.
       PathEntry new_entry = (path_.size() >= 2) ? path_[path_.size() - 2].node : getRootEntry();
       // Switch to the leftmost (rightmost) subtree at level M-1.
-      if (last_entry.is_left_subtree) {
+      if (lastEntryIsLeftSubtree()) {
         new_entry.switchToLeftmostChild(last_entry.level - 1);
       }
       else {
@@ -407,26 +424,26 @@ namespace Detail_NS
     Entry& last_entry = path_.back();
     // The last entry must not be for a leaf node.
     assert(!last_entry.node.empty());
-    if (last_entry.is_left_subtree) {
+    if (lastEntryIsLeftSubtree()) {
       last_entry.node.switchToLeftChild();
       ++last_entry.level;
     }
     else {
-      path_.push_back(Entry{ .node = last_entry.node.leftChild(), .level = 1, .is_left_subtree = true });
+      path_.push_back(Entry{ .node = last_entry.node.leftChild(), .level = 1 });
     }
   }
 
   void CompressedPath::switchToImmediateRightChild() noexcept {
     // Special case: adding an entry for the immediate right subtree of the root.
     if (path_.empty()) {
-      path_.push_back(Entry{ .node = getRootEntry().rightChild(), .level = 1, .is_left_subtree = false});
+      path_.push_back(Entry{ .node = getRootEntry().rightChild(), .level = 1 });
       return;
     }
     Entry& last_entry = path_.back();
     // The last entry must not be for a leaf node.
     assert(!last_entry.node.empty());
-    if (last_entry.is_left_subtree) {
-      path_.push_back(Entry{ .node = last_entry.node.rightChild(), .level = 1, .is_left_subtree = false });
+    if (lastEntryIsLeftSubtree()) {
+      path_.push_back(Entry{ .node = last_entry.node.rightChild(), .level = 1 });
     }
     else {
       last_entry.node.switchToRightChild();
@@ -445,7 +462,7 @@ namespace Detail_NS
       // I.e. Kmax = floor(log2(N)): this way, N >= 2^Kmax, but also N < 2^(Kmax+1).
       const std::size_t level = floorLog2(entry.numBuckets());
       entry.switchToRightmostChild(level);
-      path_.push_back(Entry{ .node = entry, .level = level, .is_left_subtree = false });
+      path_.push_back(Entry{ .node = entry, .level = level });
     }
     else {
       Entry& last_entry = path_.back();
@@ -453,8 +470,8 @@ namespace Detail_NS
         return;
       }
       const std::size_t level = floorLog2(last_entry.node.numBuckets());
-      if (last_entry.is_left_subtree) {
-        path_.push_back(Entry{ .node = last_entry.node.rightmostChild(level), .level = level, .is_left_subtree = false });
+      if (lastEntryIsLeftSubtree()) {
+        path_.push_back(Entry{ .node = last_entry.node.rightmostChild(level), .level = level });
       }
       else {
         last_entry.node.switchToRightmostChild(level);
@@ -471,7 +488,7 @@ namespace Detail_NS
     // The maximum valid level is the smallest Kmax such that ceil(N / 2^Kmax) == 1.
     // I.e. Kmax = ceil(log2(N)).
     const std::size_t level = ceilLog2(path_entry.numBuckets());
-    return Entry{ .node = path_entry.leftmostChild(level), .level = level, .is_left_subtree = true };
+    return Entry{ .node = path_entry.leftmostChild(level), .level = level };
   }
 
   constexpr PathEntry CompressedPath::getRootEntry() const noexcept {

@@ -16,8 +16,7 @@ static std::ostream& operator<<(std::ostream& stream, const PathEntry& entry) {
 }
 
 static std::ostream& operator<<(std::ostream& stream, const CompressedPath::Entry& entry) {
-  return stream << "{is_left_subtree: " << (entry.is_left_subtree ? "true" : "false")
-                << " level: " << entry.level
+  return stream << "{level: " << entry.level
                 << " node: " << entry.node << "}";
 }
 
@@ -48,8 +47,7 @@ static constexpr bool operator!=(const PathEntry& lhs, const PathEntry& rhs) noe
 }
 
 static constexpr bool operator==(const CompressedPath::Entry& lhs, const CompressedPath::Entry& rhs) noexcept {
-  return lhs.is_left_subtree == rhs.is_left_subtree &&
-         lhs.level == rhs.level &&
+  return lhs.level == rhs.level &&
          lhs.node == rhs.node;
 }
 
@@ -118,11 +116,6 @@ private:
 };
 
 TEST(CompressedPath, Build) {
-  using ::CumulativeHistogram_NS::Detail_NS::CompressedPath;
-  using ::CumulativeHistogram_NS::Detail_NS::PathEntry;
-  using ::CumulativeHistogram_NS::Detail_NS::countElementsInLeftmostSubtree;
-  using ::CumulativeHistogram_NS::Detail_NS::findDeepestNodeForElements;
-
   constexpr std::size_t kMaxBucketCapacity = 20;
 
   for (std::size_t bucket_capacity = 0; bucket_capacity < kMaxBucketCapacity; ++bucket_capacity) {
@@ -133,9 +126,11 @@ TEST(CompressedPath, Build) {
       const std::size_t root_level = findDeepestNodeForElements(num_buckets, bucket_capacity);
       const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, root_level);
       PathEntry tree{ 0, bucket_capacity_at_level };
+      // path[0] should be a right subtree, path[1] should be a left subtree, and so on.
+      bool should_switch_left = false;
       for (const CompressedPath::Entry& entry : path.path()) {
         EXPECT_FALSE(tree.empty());
-        if (entry.is_left_subtree) {
+        if (should_switch_left) {
           tree.switchToLeftmostChild(entry.level);
         }
         else {
@@ -143,48 +138,52 @@ TEST(CompressedPath, Build) {
         }
         // Check the node.
         EXPECT_EQ(tree, entry.node);
+        // During the next iteration we should switch to the opposite subtree.
+        should_switch_left = !should_switch_left;
       }
-      // The path should end with a leaf node.
+      // The path should lead to a leaf node.
       EXPECT_TRUE(tree.empty());
-      // If the path is not empty, then the last node should represent the last bucket.
-      if (!path.path().empty()) {
-        EXPECT_EQ(path.path().back().node.bucketFirst() + 1, num_buckets);
+      // If there is at least 1 bucket, then this leaf node should represent the last bucket.
+      if (num_buckets > 0) {
+        EXPECT_EQ(tree.bucketFirst(), num_buckets - 1);
+        EXPECT_EQ(tree.numBuckets(), 1);
       }
     }
   }
 }
 
 TEST(CompressedPath, PushBack) {
-  using ::CumulativeHistogram_NS::Detail_NS::CompressedPath;
-  using ::CumulativeHistogram_NS::Detail_NS::PathEntry;
-  using ::CumulativeHistogram_NS::Detail_NS::countElementsInLeftmostSubtree;
-  using ::CumulativeHistogram_NS::Detail_NS::findDeepestNodeForElements;
+  constexpr std::size_t kBucketCapacityMin = 1;
+  constexpr std::size_t kBucketCapacityMax = 128;
+  for (std::size_t bucket_capacity = kBucketCapacityMin; bucket_capacity <= kBucketCapacityMax; ++bucket_capacity) {
+    std::size_t num_buckets = 0;
+    CompressedPath path{ bucket_capacity };
+    for (std::size_t i = 0; i < bucket_capacity; ++i) {
+      ++num_buckets;
+      path.pushBack();
 
-  const std::size_t bucket_capacity = 8;
-  std::size_t num_buckets = 0;
-  CompressedPath path{ bucket_capacity };
-
-  for (std::size_t i = 0; i < bucket_capacity; ++i) {
-    ++num_buckets;
-    path.pushBack();
-
-    // Check the path
-    const std::size_t root_level = findDeepestNodeForElements(num_buckets, bucket_capacity);
-    const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, root_level);
-    PathEntry tree{ 0, bucket_capacity_at_level };
-    for (const CompressedPath::Entry& entry : path.path()) {
-      EXPECT_FALSE(tree.empty());
-      if (entry.is_left_subtree) {
-        tree.switchToLeftmostChild(entry.level);
+      // Check the path
+      const std::size_t root_level = findDeepestNodeForElements(num_buckets, bucket_capacity);
+      const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, root_level);
+      PathEntry tree{ 0, bucket_capacity_at_level };
+      // path[0] should be a right subtree, path[1] should be a left subtree, and so on.
+      bool should_switch_left = false;
+      for (const CompressedPath::Entry& entry : path.path()) {
+        EXPECT_FALSE(tree.empty());
+        if (should_switch_left) {
+          tree.switchToLeftmostChild(entry.level);
+        }
+        else {
+          tree.switchToRightmostChild(entry.level);
+        }
+        // Check the node.
+        EXPECT_EQ(tree, entry.node);
+        // During the next iteration we should switch to the opposite subtree.
+        should_switch_left = !should_switch_left;
       }
-      else {
-        tree.switchToRightmostChild(entry.level);
-      }
-      // Check the node.
-      EXPECT_EQ(tree, entry.node);
+      // The path should end with a leaf node.
+      EXPECT_TRUE(tree.empty());
     }
-    // The path should end with a leaf node.
-    EXPECT_TRUE(tree.empty());
   }
 }
 
@@ -192,7 +191,6 @@ TEST(CompressedPath, PopBack) {
   // The test CompressedPath.PushBack already checks that CompressedPath::pushBack() works
   // correctly, so it's sufficint to check that calling popBack() immediately after pushBack()
   // is a no-op.
-  using ::CumulativeHistogram_NS::Detail_NS::CompressedPath;
   constexpr std::size_t kBucketCapacityMin = 1;
   constexpr std::size_t kBucketCapacityMax = 128;
   for (std::size_t bucket_capacity = kBucketCapacityMin; bucket_capacity <= kBucketCapacityMax; ++bucket_capacity) {
