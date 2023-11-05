@@ -787,7 +787,7 @@ void CumulativeHistogram<T>::pop_back() {
   elements_.pop_back();
   // Update the path to the last bucket if the number of buckets has changed.
   // The number of buckets changes only if there was K*BucketSize+1 elements before pop_back().
-  if (size() % BucketSize != 0) {
+  if (size() % BucketSize == 0) {
     path_to_last_bucket_.popBack();
   }
 }
