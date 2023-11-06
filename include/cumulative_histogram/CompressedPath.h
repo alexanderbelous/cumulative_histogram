@@ -121,7 +121,7 @@ namespace Detail_NS
     // The path becomes empty after this call; capacity remains unchanged.
     // Time complexity: O(logN).
     // TODO: make it O(1) - there's no need to zero out Entries.
-    inline void clear();
+    inline void clear() noexcept;
 
     // Modifies the path so that it leads to the bucket following the one that the path currently leads to.
     // Time complexity: O(1).
@@ -284,7 +284,7 @@ namespace Detail_NS
     build(num_buckets_, bucket_capacity);
   }
 
-  void CompressedPath::clear() {
+  void CompressedPath::clear() noexcept {
     path_.clear();
     num_buckets_ = 0;
     root_level_ = findDeepestNodeForElements(0, bucket_capacity_);
@@ -301,7 +301,6 @@ namespace Detail_NS
     // OK, we know that there's at least 1 bucket. If there are 2 or more buckets,
     // then the path must not be empty; if there is exactly 1 bucket, then we can treat
     // the *fake* root node as the left subtree of the new root node that will be added after push_back().
-    //assert(!path_.empty());
     if (path_.empty() || lastEntryIsLeftSubtree()) {
       // The last entry is the leftmost subtree at level K of some node.
       // If K > 1, then we replace it with an entry for the leftmost subtree at level (K-1) of the same node.
