@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <ostream>
+#include <string_view>
 
 namespace CumulativeHistogram_NS {
 namespace Detail_NS {
@@ -115,38 +116,104 @@ private:
   std::size_t root_;
 };
 
+// Checks that the path actually leads to the last bucket.
+testing::AssertionResult CheckPath(const CompressedPath& path) {
+  PathEntry tree = path.getRootEntry();
+  // path[0] is a right subtree, path[1] is a left subtree, and so on.
+  bool should_switch_left = false;
+  for (const CompressedPath::Entry& entry : path.path()) {
+    // The path should end with a leaf.
+    if (tree.empty()) {
+      return testing::AssertionFailure() << "The path has entries after reaching a leaf (" << tree << "): " << path;
+    }
+    // Each entry should be a subtree at level K > 0.
+    if (entry.level == 0) {
+      return testing::AssertionFailure() << "The path has a 0-level entry (" << entry << "): " << path;
+    }
+    // The depth of the deepest leftmost subtree is ceil(log2(N)),
+    // and the depth of the deepest rightmost subtree is floor(log2(N)),
+    // where N is the number of buckets in the current tree.
+    const std::size_t max_valid_level = should_switch_left ? ceilLog2(tree.numBuckets()) :
+                                                             floorLog2(tree.numBuckets());
+    // Check that the specified subtree exists.
+    if (entry.level > max_valid_level) {
+      const std::string_view subtree_type = should_switch_left ? std::string_view("leftmost")
+                                                               : std::string_view("rightmost");
+      return testing::AssertionFailure() <<
+        "The path has an entry for a " << subtree_type << " subtree with an invalid level : " << entry <<
+        ". The previous entry led to the subtree " << tree <<
+        ", whose deepest " << subtree_type << " child is at level " << max_valid_level <<
+        ". Full path: " << path;
+    }
+    // Switch to the specified subtree.
+    if (should_switch_left) {
+      tree.switchToLeftmostChild(entry.level);
+    }
+    else {
+      tree.switchToRightmostChild(entry.level);
+    }
+    // Check that the node stored in the entry is correct.
+    if (tree != entry.node) {
+      return testing::AssertionFailure() <<
+        "Incorrect node in the path entry " << entry <<
+        ". Following the path to this entry leads to " << tree <<
+        ". Full path: " << path;
+    }
+    // During the next iteration we should switch to the opposite subtree.
+    should_switch_left = !should_switch_left;
+  }
+  // The path should lead to a leaf node.
+  if (!tree.empty()) {
+    return testing::AssertionFailure() <<
+      "The path leads to a non-leaf node " << tree << ". Full path: " << path;
+  }
+  // If there is at least 1 bucket, then this leaf node should represent the last bucket.
+  if (path.numBuckets() > 0) {
+    if ((tree.bucketFirst() != path.numBuckets() - 1) || (tree.numBuckets() != 1)) {
+      return testing::AssertionFailure() <<
+        "The path " << path << " does not lead to a leaf node representing the last bucket; "
+        "instead, it leads to " << tree;
+    }
+  }
+  return testing::AssertionSuccess();
+}
+
 TEST(CompressedPath, Build) {
   constexpr std::size_t kMaxBucketCapacity = 20;
-
   for (std::size_t bucket_capacity = 0; bucket_capacity < kMaxBucketCapacity; ++bucket_capacity) {
     for (std::size_t num_buckets = 0; num_buckets <= bucket_capacity; ++num_buckets) {
       CompressedPath path;
       path.build(num_buckets, bucket_capacity);
       // Validate the path.
-      const std::size_t root_level = findDeepestNodeForElements(num_buckets, bucket_capacity);
-      const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, root_level);
-      PathEntry tree{ 0, bucket_capacity_at_level };
-      // path[0] should be a right subtree, path[1] should be a left subtree, and so on.
-      bool should_switch_left = false;
-      for (const CompressedPath::Entry& entry : path.path()) {
-        EXPECT_FALSE(tree.empty());
-        if (should_switch_left) {
-          tree.switchToLeftmostChild(entry.level);
-        }
-        else {
-          tree.switchToRightmostChild(entry.level);
-        }
-        // Check the node.
-        EXPECT_EQ(tree, entry.node);
-        // During the next iteration we should switch to the opposite subtree.
-        should_switch_left = !should_switch_left;
+      EXPECT_TRUE(CheckPath(path));
+    }
+  }
+}
+
+TEST(CompressedPath, ReserveLessOrSameAsCurrentCapacity) {
+  for (std::size_t bucket_capacity = 1; bucket_capacity <= 32; ++bucket_capacity) {
+    for (std::size_t num_buckets = 0; num_buckets < bucket_capacity; ++num_buckets) {
+      CompressedPath path;
+      path.build(num_buckets, bucket_capacity);
+      for (std::size_t new_capacity = 0; new_capacity <= bucket_capacity; ++new_capacity) {
+        CompressedPath path2 = path;
+        path2.reserve(new_capacity);
+        EXPECT_EQ(path2, path);
       }
-      // The path should lead to a leaf node.
-      EXPECT_TRUE(tree.empty());
-      // If there is at least 1 bucket, then this leaf node should represent the last bucket.
-      if (num_buckets > 0) {
-        EXPECT_EQ(tree.bucketFirst(), num_buckets - 1);
-        EXPECT_EQ(tree.numBuckets(), 1);
+    }
+  }
+}
+
+TEST(CompressedPath, ReserveMoreThanCurrentCapacity) {
+  for (std::size_t bucket_capacity = 1; bucket_capacity <= 32; ++bucket_capacity) {
+    for (std::size_t num_buckets = 0; num_buckets < bucket_capacity; ++num_buckets) {
+      for (std::size_t new_capacity = bucket_capacity + 1; new_capacity <= 64; ++new_capacity) {
+        CompressedPath path;
+        path.build(num_buckets, bucket_capacity);
+        path.reserve(new_capacity);
+        EXPECT_EQ(path.bucketCapacity(), new_capacity);
+        EXPECT_EQ(path.numBuckets(), num_buckets);
+        EXPECT_TRUE(CheckPath(path));
       }
     }
   }
@@ -161,28 +228,10 @@ TEST(CompressedPath, PushBack) {
     for (std::size_t i = 0; i < bucket_capacity; ++i) {
       ++num_buckets;
       path.pushBack();
-
-      // Check the path
-      const std::size_t root_level = findDeepestNodeForElements(num_buckets, bucket_capacity);
-      const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, root_level);
-      PathEntry tree{ 0, bucket_capacity_at_level };
-      // path[0] should be a right subtree, path[1] should be a left subtree, and so on.
-      bool should_switch_left = false;
-      for (const CompressedPath::Entry& entry : path.path()) {
-        EXPECT_FALSE(tree.empty());
-        if (should_switch_left) {
-          tree.switchToLeftmostChild(entry.level);
-        }
-        else {
-          tree.switchToRightmostChild(entry.level);
-        }
-        // Check the node.
-        EXPECT_EQ(tree, entry.node);
-        // During the next iteration we should switch to the opposite subtree.
-        should_switch_left = !should_switch_left;
-      }
-      // The path should end with a leaf node.
-      EXPECT_TRUE(tree.empty());
+      EXPECT_EQ(path.bucketCapacity(), bucket_capacity);
+      EXPECT_EQ(path.numBuckets(), num_buckets);
+      // Check that the path leads to the last bucket.
+      EXPECT_TRUE(CheckPath(path));
     }
   }
 }

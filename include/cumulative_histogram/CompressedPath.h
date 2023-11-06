@@ -110,6 +110,10 @@ namespace Detail_NS
     inline void build(std::size_t num_buckets, std::size_t bucket_capacity);
 
     // Update the path according to the new bucket capacity of the tree.
+    // \param bucket_capacity - the number of buckets the tree should be able to represent.
+    // The function has no effect if this->bucketCapacity() >= bucket_capacity.
+    // Otherwise, the path is updated according to the new tree structure. The number of currently
+    // active buckets (i.e. the value returned by this->numBuckets()) remains the same.
     // Time complexity: O(logN), where N is the new bucket capacity.
     inline void reserve(std::size_t bucket_capacity);
 
@@ -139,6 +143,10 @@ namespace Detail_NS
     // Time complexity: O(1).
     constexpr std::size_t numBuckets() const noexcept;
 
+    // \return an entry for the root of the currently effective tree.
+    // Time complexity: O(1).
+    constexpr PathEntry getRootEntry() const noexcept;
+
     // \return true if the last entry in the path is the leftmost subtree of some node, false otherwise.
     //         Returns true if the path is empty.
     // Time complexity: O(1).
@@ -149,7 +157,7 @@ namespace Detail_NS
     // subtree at full capacity that contains the last bucket. Note that this is always the left subtree of some
     // other tree.
     // Time complexity: O(1).
-    inline PathEntry findTreeToExtendAfterPushBack() noexcept;
+    constexpr PathEntry findTreeToExtendAfterPushBack() noexcept;
 
    private:
     // Modifies the path so that it leads to the immediate parent of the node that it currently leads to.
@@ -174,10 +182,6 @@ namespace Detail_NS
     // \return an entry for the deepest leftmost subtree of path_entry.
     // Time complexity: O(1).
     static constexpr Entry makeEntryForDeepestLeftmostSubtree(const PathEntry& path_entry) noexcept;
-
-    // \return an entry for the root of the currently effective tree.
-    // Time complexity: O(1).
-    constexpr PathEntry getRootEntry() const noexcept;
 
     // Compute the maximum length of a path for a tree of the specified capacity.
     // \param bucket_capacity - the maximum number of buckets the tree can represent.
@@ -214,7 +218,6 @@ namespace Detail_NS
     path_.reserve(maxPathLength(bucket_capacity));
     bucket_capacity_ = bucket_capacity;
     num_buckets_ = num_buckets;
-    // The number of buckets remains the same, but the level of the root may change.
     root_level_ = findDeepestNodeForElements(num_buckets_, bucket_capacity);
     // Construct a path to the last bucket.
     const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, root_level_);
@@ -255,7 +258,29 @@ namespace Detail_NS
   }
 
   void CompressedPath::reserve(std::size_t bucket_capacity) {
-    // TODO: optimize the case when the old tree is a subtree of the new tree.
+    // Do nothing if the current capacity is greater or equal to the input one.
+    if (bucket_capacity_ >= bucket_capacity) {
+      return;
+    }
+    // Check if the currently effective tree is a subtree of the new tree.
+    // Note that this doesn't necessarily mean that the current full tree is a subtree of the new tree:
+    // for example, if the current capacity is 15, and the number of currently active buckets is 8 (i.e.
+    // all the active buckets are in the left subtree, which is the currently effective tree), then the
+    // currently effective tree is a subtree of the tree representing 32 buckets, even though no leftmost
+    // subtree of that tree has capacity equal to 15.
+    const std::size_t bucket_capacity_current = countElementsInLeftmostSubtree(bucket_capacity_, root_level_);
+    const std::size_t level = findLeftmostSubtreeWithExactCapacity(bucket_capacity_current, bucket_capacity);
+    if (level != static_cast<std::size_t>(-1)) {
+      // Allocate extra memory in case the longest path in the new tree is longer that
+      // the longest path in the old tree.
+      path_.reserve(maxPathLength(bucket_capacity));
+      // Update the capacity.
+      bucket_capacity_ = bucket_capacity;
+      // Update the root level.
+      root_level_ = findDeepestNodeForElements(num_buckets_, bucket_capacity);
+      return;
+    }
+    // Otherwise, just rebuild the path.
     build(num_buckets_, bucket_capacity);
   }
 
@@ -364,7 +389,7 @@ namespace Detail_NS
     return path_.size() % 2 == 0;
   }
 
-  PathEntry CompressedPath::findTreeToExtendAfterPushBack() noexcept {
+  constexpr PathEntry CompressedPath::findTreeToExtendAfterPushBack() noexcept {
     assert(num_buckets_ > 0);
     // 1. Edge case - if there is only 1 bucket, then the path is empty (because the tree has 0 nodes),
     //    and the tree that will need to be extended is the only leaf.
