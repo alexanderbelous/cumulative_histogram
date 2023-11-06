@@ -343,8 +343,11 @@ namespace Detail_NS
       if (lastEntryIsLeftSubtree()) {
         path_.pop_back();
       }
-      // Now either the path is empty, or it ends with an entry for the rightmost subtree of some node.
-      // Switch to the immediate parent of that node.
+      // Now the path must end with an entry for the rightmost subtree of some node.
+      // It cannot be empty because even the entry for the leftmost subtree that we might've removed
+      // earlier could not be the only entry - the path must always start with an entry for the rightmost
+      // subtree.
+      // Switch to the immediate parent of the node that the path currently leads to.
       switchToImmediateParent();
       // If the path is now empty, update the root so that it refers to its immediate left child.
       // Otherwise, switch to the immediate left child of the last entry.
