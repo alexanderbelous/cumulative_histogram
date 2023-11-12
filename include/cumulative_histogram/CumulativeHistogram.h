@@ -222,11 +222,12 @@ class CumulativeHistogram {
   // Time complexity: O(1).
   const_reference element(size_type k) const;
 
-  // Increment the specified element.
+  // Increment the specified element by the specified value.
+  // \param k - 0-based index of the element to update.
+  // \param value - value to add to the k-th element.
   // Throws std::out_of_range if k >= size().
   // Time complexity: O(log(N)).
-  // TODO: remove the default value.
-  void increment(size_type k, const T& value = 1);
+  void increment(size_type k, const T& value);
 
   // Returns the k-th prefix sum of the stored elements.
   // Throws std::out_of_range if k >= size().
