@@ -7,6 +7,14 @@
 #include <gtest/gtest.h>
 
 namespace CumulativeHistogram_NS {
+
+// Use bucket size = 2 for all types in these tests.
+template<class T>
+class BucketSize<T, void> : public std::integral_constant<std::size_t, 2> {};
+// Sanity checks.
+static_assert(BucketSize<int>::value == 2, "BucketSize<int> must be equal to 2 for unit tests.");
+static_assert(BucketSize<unsigned int>::value == 2, "BucketSize<unsigned int > must be equal to 2 for unit tests.");
+
 namespace {
 
 template<class T>

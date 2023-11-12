@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cumulative_histogram/BucketSize.h>
 #include <cumulative_histogram/CompressedPath.h>
 #include <cumulative_histogram/CumulativeHistogramImpl.h>
 #include <cumulative_histogram/FullTreeView.h>
@@ -69,10 +70,12 @@ concept Additive =
 template<Additive T>
 class CumulativeHistogram {
  public:
-   // Split capacity into M = ceil(Nmax/BucketSize) buckets, and build a tree for those. This
-   // improves performance for small N for arithmetic types (by enabling vectorization).
-  // TODO: make this a template parameter.
-  static constexpr std::size_t BucketSize = 2;
+  // CumulativeHistogram splits the elements into buckets and builds an auxiliary binary tree for them
+  // (the buckets are the leaves of the tree).
+  // The asymptotic time complexities of the operations do not depend on the size of the bucket, but their
+  // constant factors do.
+  static constexpr std::size_t BucketSize = BucketSize<T>::value;
+  static_assert(BucketSize >= 2, "BucketSize should not be less than 2.");
 
   using value_type = T;
   // TODO: declare as `typename std::vector<T>::size_type`.
