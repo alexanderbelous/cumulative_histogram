@@ -48,9 +48,11 @@ testing::AssertionResult CheckLowerBound(const CumulativeHistogram<T>& histogram
   // Check that CumulativeHistogram::lowerBound() returns the same result.
   auto [iter_actual, prefix_sum_actual] = histogram.lowerBound(value);
   if ((iter_expected != iter_actual) || (prefix_sum_expected != prefix_sum_actual)) {
+    const std::ptrdiff_t index_expected = std::distance(histogram.begin(), iter_expected);
+    const std::ptrdiff_t index_actual = std::distance(histogram.begin(), iter_actual);
     return testing::AssertionFailure() << "Expected lowerBound(" << value << ") to return {"
-      << iter_expected << ", " << prefix_sum_expected << "}; got {"
-      << iter_actual << ", " << prefix_sum_actual << "}.";
+      << "begin() + " << index_expected << ", " << prefix_sum_expected << "}; got {"
+      << "begin() + " << index_actual << ", " << prefix_sum_actual << "}.";
   }
   return testing::AssertionSuccess();
 }
@@ -71,9 +73,11 @@ testing::AssertionResult CheckUpperBound(const CumulativeHistogram<T>& histogram
   // Check that CumulativeHistogram::upperBound() returns the same result.
   auto [iter_actual, prefix_sum_actual] = histogram.upperBound(value);
   if ((iter_expected != iter_actual) || (prefix_sum_expected != prefix_sum_actual)) {
+    const std::ptrdiff_t index_expected = std::distance(histogram.begin(), iter_expected);
+    const std::ptrdiff_t index_actual = std::distance(histogram.begin(), iter_actual);
     return testing::AssertionFailure() << "Expected upperBound(" << value << ") to return {"
-      << iter_expected << ", " << prefix_sum_expected << "}; got {"
-      << iter_actual << ", " << prefix_sum_actual << "}.";
+      << "begin() + " << index_expected << ", " << prefix_sum_expected << "}; got {"
+      << "begin() + " << index_actual << ", " << prefix_sum_actual << "}.";
   }
   return testing::AssertionSuccess();
 }

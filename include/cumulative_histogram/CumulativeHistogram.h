@@ -85,8 +85,8 @@ class CumulativeHistogram {
   using const_reference = const T&;
   using pointer = const T*;
   using const_pointer = const T*;
-  using iterator = const T*;
-  using const_iterator = const T*;
+  using iterator = typename std::vector<T>::const_iterator;
+  using const_iterator = typename std::vector<T>::const_iterator;
   using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
@@ -604,13 +604,13 @@ CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last):
 template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::begin() const noexcept {
-  return elements_.data();
+  return elements_.begin();
 }
 
 template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::end() const noexcept {
-  return elements_.data() + size();
+  return elements_.end();
 }
 
 template<Additive T>
