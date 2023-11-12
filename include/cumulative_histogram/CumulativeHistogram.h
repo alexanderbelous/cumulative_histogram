@@ -41,14 +41,14 @@ concept Additive =
   // the expression `lhs += rhs` must be valid.
   requires(T& lhs, const T& rhs) { lhs += rhs; };
 
-// A class for efficient computation of prefix sums for a dynamic array of elements.
+// Container for efficient computation of prefix sums for a dynamic array of elements.
 //
 // The template type parameter T must satisfy the `Additive` concept above. There are additional
 // requirements that cannot be expressed via C++ concepts:
 // 1) Addition must be commutative, i.e. `a + b == b + a` for any a and b.
 // 2) Addition must be associative, i.e. `(a + b) + c == a + (b + c)` for any a, b, c.
 // 3) A default-constructed value-initialized object must have the same meaning as the identity element in
-//    additive groups ("zero"): `T{} + x == x` for any x.
+//    additive groups (i.e. "zero"): `T{} + x == x` for any x.
 //
 // * Built-in arithmetic types satisfy these requirements.
 //   * Note that signed integer overflow is undefined behavior.
