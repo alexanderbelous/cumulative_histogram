@@ -247,21 +247,31 @@ class CumulativeHistogram {
   // class that does it.
   T totalSum() const;
 
-  // Find the first element, for which prefixSum() is not less than the specified value.
-  // The behavior is undefined if any element is negative or if computing the total sum
-  // causes an overflow for T.
-  // \return { begin()+k, prefixSum(k) }, where k is the first element for which prefixSum(k) >= value,
+  // Finds the first element k, for which prefixSum(k) is not less than the specified value.
+  // The behavior is undefined if the prefix sums are not sorted in ascending order. For built-in
+  // arithmetic types this can happen if any element is negative or if computing the total sum causes
+  // overflow.
+  // \return { begin()+k, prefixSum(k) }, where k is the first element for which !(prefixSum(k) < value),
   //         or { end(), T{} } if there is no such k.
   // Time complexity: O(log(N)).
   std::pair<const_iterator, T> lowerBound(const T& value) const;
 
-  // Find the first element, for which prefixSum() is greater than the specified value.
-  // The behavior is undefined if any element is negative or if computing the total sum
-  // causes an overflow for T.
-  // \return { begin()+k, prefixSum(k) }, where k is the first element for which prefixSum(k) > value,
+  // Same as above, but uses the given comparison function instead of operator<.
+  template<class Compare>
+  std::pair<const_iterator, T> lowerBound(const T& value, Compare cmp) const;
+
+  // Finds the first element k, for which prefixSum(k) is greater than the specified value.
+  // The behavior is undefined if the prefix sums are not sorted in ascending order. For built-in
+  // arithmetic types this can happen if any element is negative or if computing the total sum causes
+  // overflow.
+  // \return { begin()+k, prefixSum(k) }, where k is the first element for which value < prefixSum(k),
   //         or { end(), T{} } if there is no such k.
   // Time complexity: O(log(N)).
   std::pair<const_iterator, T> upperBound(const T& value) const;
+
+  // Same as above, but uses the given comparison function instead of operator<.
+  template<class Compare>
+  std::pair<const_iterator, T> upperBound(const T& value, Compare cmp) const;
 
  private:
   // Returns an immutable TreeView for the currently effective tree.
@@ -279,15 +289,6 @@ class CumulativeHistogram {
   // Returns the maximum number of elements that can represented by the current tree.
   //   num_elements <= capacityCurrent() <= capacity_
   constexpr size_type capacityCurrent() const noexcept;
-
-  // Shared implementation for lowerBound() and upperBound().
-  // For computing the lower bound, Compare should effectively implement `lhs < rhs`.
-  // For computing the upper bound, Compare should effectively implement `lhs <= rhs`.
-  // \return { begin()+k, prefixSum(k) }, where k is the first element for which !cmp(prefixSum(k), value)
-  //      or { end(), T{} } if there is no such k.
-  // Time complexity: O(log(N)).
-  template<class Compare>
-  std::pair<const_iterator, T> lowerBoundImpl(const T& value, Compare cmp) const;
 
   // Values of elements in the histogram.
   std::vector<T> elements_;
@@ -927,9 +928,15 @@ T CumulativeHistogram<T>::totalSum() const {
 }
 
 template<Additive T>
+std::pair<typename CumulativeHistogram<T>::const_iterator, T>
+CumulativeHistogram<T>::lowerBound(const T& value) const {
+  return lowerBound(value, std::less<T>{});
+}
+
+template<Additive T>
 template<class Compare>
 std::pair<typename CumulativeHistogram<T>::const_iterator, T>
-CumulativeHistogram<T>::lowerBoundImpl(const T& value, Compare cmp) const {
+CumulativeHistogram<T>::lowerBound(const T& value, Compare cmp) const {
   // Terminate if there are no elements.
   if (empty()) {
     return { end(), T{} };
@@ -975,16 +982,23 @@ CumulativeHistogram<T>::lowerBoundImpl(const T& value, Compare cmp) const {
 
 template<Additive T>
 std::pair<typename CumulativeHistogram<T>::const_iterator, T>
-CumulativeHistogram<T>::lowerBound(const T& value) const {
-  return lowerBoundImpl(value, std::less<T>{});
-}
-
-template<Additive T>
-std::pair<typename CumulativeHistogram<T>::const_iterator, T>
 CumulativeHistogram<T>::upperBound(const T& value) const {
   // Effectively implements `lhs <= rhs`, but only requires operator< to be defined for T.
   auto less_equal = [](const T& lhs, const T& rhs) { return !(rhs < lhs); };
-  return lowerBoundImpl(value, less_equal);
+  return lowerBound(value, less_equal);
+}
+
+template<Additive T>
+template<class Compare>
+std::pair<typename CumulativeHistogram<T>::const_iterator, T>
+CumulativeHistogram<T>::upperBound(const T& value, Compare cmp) const {
+  // Assuming that cmp(lhs, rhs) semantically means lhs < rhs, we can implement "less than or equal to"
+  // comparison as !cmp(rhs, lhs).
+  auto less_equal = [cmp](const T& lhs, const T& rhs) { return !cmp(rhs, lhs); };
+  // lowerBound(value, less_equal) returns the first element k for which !less_equal(prefixSum(k), value),
+  // i.e. the first element for which cmp(value, prefixSum(k)) == true, i.e. the first element for which
+  // prefix sum is *greater* than value.
+  return lowerBound(value, less_equal);
 }
 
 }  // namespace CumulativeHistogram_NS
