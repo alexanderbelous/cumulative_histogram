@@ -746,6 +746,17 @@ void CumulativeHistogram<T>::setZero() {
 }
 
 template<Additive T>
+void CumulativeHistogram<T>::fill(const T& value) {
+  std::fill(elements_.begin(), elements_.end(), value);
+  const std::size_t num_buckets = Detail_NS::countBuckets(capacity_, BucketSize);
+  const std::size_t num_nodes = Detail_NS::countNodesInBucketizedTree(num_buckets);
+  const std::span<T> nodes{ nodes_.get(), num_nodes };
+  // This can be optimized for types for which multiplication is defined and `x+x+x...+x == x*N`.
+  // However, the time complexity will still be O(N), so whatever.
+  Detail_NS::buildBucketizedTree<T>(elements_, nodes, capacity_, BucketSize);
+}
+
+template<Additive T>
 void CumulativeHistogram<T>::push_back() {
   push_back(T{});
 }

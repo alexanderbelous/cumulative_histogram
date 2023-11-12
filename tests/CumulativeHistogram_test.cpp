@@ -218,6 +218,43 @@ TEST(CumulativeHistogram, SetZeroAtLessThanHalfCapacity) {
   CheckPrefixSums(histogram);
 }
 
+TEST(CumulativeHistogram, FillAtFullCapacity) {
+  constexpr std::size_t kNumElements = 32;
+  constexpr int kValueToFillWith = 2;
+  CumulativeHistogram<int> histogram(kNumElements, 1);
+  histogram.fill(kValueToFillWith);
+  for (std::size_t i = 0; i < kNumElements; ++i) {
+    EXPECT_EQ(histogram.element(i), kValueToFillWith);
+  }
+  CheckPrefixSums(histogram);
+}
+
+TEST(CumulativeHistogram, FillAtMoreThanHalfCapacity) {
+  constexpr std::size_t kCapacity = 32;
+  constexpr std::size_t kNumElements = kCapacity / 2 + 1;
+  constexpr int kValueToFillWith = 2;
+  CumulativeHistogram<int> histogram(kNumElements, 1);
+  histogram.reserve(kCapacity);
+  histogram.fill(kValueToFillWith);
+  for (std::size_t i = 0; i < kNumElements; ++i) {
+    EXPECT_EQ(histogram.element(i), kValueToFillWith);
+  }
+  CheckPrefixSums(histogram);
+}
+
+TEST(CumulativeHistogram, FillAtLessThanHalfCapacity) {
+  constexpr std::size_t kCapacity = 32;
+  constexpr std::size_t kNumElements = kCapacity / 4 + 1;
+  constexpr int kValueToFillWith = 2;
+  CumulativeHistogram<int> histogram(kNumElements, 1);
+  histogram.reserve(kCapacity);
+  histogram.fill(kValueToFillWith);
+  for (std::size_t i = 0; i < kNumElements; ++i) {
+    EXPECT_EQ(histogram.element(i), kValueToFillWith);
+  }
+  CheckPrefixSums(histogram);
+}
+
 TEST(CumulativeHistogram, Reserve) {
   constexpr std::array<unsigned int, 5> kElements = { 1, 2, 3, 4, 5};
   // Construct a histogram capable of storing 5 elements.
