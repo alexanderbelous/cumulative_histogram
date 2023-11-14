@@ -417,7 +417,7 @@ namespace Detail_NS {
   // \returns the total sum of elements from `elements`.
   // Time complexity: O(logN), where N = elements.size().
   template<class T>
-  constexpr T sumElementsOfFullTree(std::span<const T> elements, TreeViewSimple<const T> tree, std::size_t bucket_size) {
+  constexpr T sumElementsOfFullTree(std::span<const T> elements, FullTreeView<const T> tree, std::size_t bucket_size) {
     assert(!elements.empty());
     assert(elements.size() == tree.numBuckets() * bucket_size);
     T result{};
@@ -796,7 +796,7 @@ void CumulativeHistogram<T>::push_back(const T& value) {
     // This has O(logN) time complexity in the worst case, but, fortunately, the amortized time complexity is O(1).
     const std::size_t element_first = subtree_to_extend.bucketFirst() * BucketSize;
     const std::span<const T> subtree_elements = std::span<const T>(elements_).subspan(element_first);
-    const Detail_NS::TreeViewSimple<const T> subtree(subtree_root, subtree_to_extend.numBuckets());
+    const Detail_NS::FullTreeView<const T> subtree(subtree_root, subtree_to_extend.numBuckets());
     // Construct the new node.
     *new_node = Detail_NS::sumElementsOfFullTree<T>(subtree_elements, subtree, BucketSize);
   }
@@ -875,15 +875,15 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
   if (k >= size()) {
     throw std::out_of_range("CumulativeHistogram::increment(): k is out of range.");
   }
-  // We are using TreeViewSimple here even though TreeView can skip inactive nodes in O(1)
-  // time. The reason is that traversing TreeViewSimple is much faster - switching to the
+  // We are using FullTreeView here even though TreeView can skip inactive nodes in O(1)
+  // time. The reason is that traversing FullTreeView is much faster - switching to the
   // left/right subtree only requires 3 or 4 instructions, but for TreeView it's much more.
   // This is essentially the constant factor of our O(logN) time complexity, and by
-  // using TreeViewSimple we improve the average time complexity, whereas TreeView
+  // using FullTreeView we improve the average time complexity, whereas TreeView
   // optimizes the best-case time complexity at the cost of greater average time complexity.
   const size_type k_plus_one = k + 1;
   // Tree representing the elements [0; N).
-  Detail_NS::TreeViewSimple<T> tree =
+  Detail_NS::FullTreeView<T> tree =
     Detail_NS::makeFullTreeView<T>(nodes_.get(), size(), capacity(), BucketSize);
   while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [first; middle).
@@ -922,7 +922,7 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
   }
   T result {};
   // Tree representing the elements [0; N).
-  Detail_NS::TreeViewSimple<const T> tree =
+  Detail_NS::FullTreeView<const T> tree =
     Detail_NS::makeFullTreeView<const T>(nodes_.get(), size(), capacity(), BucketSize);
   while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [first; middle).

@@ -9,7 +9,7 @@ namespace CumulativeHistogram_NS
 {
 namespace Detail_NS
 {
-  // Non-template base for TreeViewSimple.
+  // Non-template base for FullTreeView.
   class FullTreeViewBase {
    public:
     constexpr explicit FullTreeViewBase(std::size_t num_buckets) noexcept:
@@ -98,11 +98,10 @@ namespace Detail_NS
     std::size_t num_buckets_;
   };
 
-  // TODO: rename to FullTreeView.
   template<class T>
-  class TreeViewSimple : public FullTreeViewBase {
+  class FullTreeView : public FullTreeViewBase {
    public:
-    constexpr TreeViewSimple(T* root, std::size_t num_buckets) noexcept:
+    constexpr FullTreeView(T* root, std::size_t num_buckets) noexcept:
       FullTreeViewBase(num_buckets),
       root_(root)
     {}
@@ -153,19 +152,19 @@ namespace Detail_NS
     return FullTreeViewData{ root_level, bucket_capacity_at_level };
   }
 
-  // Constructs a TreeViewSimple for the currently effective tree.
+  // Constructs a FullTreeView for the currently effective tree.
   // \param nodes - pointer to the nodes array of the main tree.
   // \param num_elements - the number of currently active elements.
   // \param capacity - the maximum number of elements the tree can represent.
   // \param bucket_size - the number of elements per bucket.
-  // \return a TreeViewSimple for the currently effective tree representing `num_elements` elements.
+  // \return a FullTreeView for the currently effective tree representing `num_elements` elements.
   template<class T>
-  constexpr TreeViewSimple<T> makeFullTreeView(T* nodes,
+  constexpr FullTreeView<T> makeFullTreeView(T* nodes,
                                                std::size_t num_elements,
                                                std::size_t capacity,
                                                std::size_t bucket_size) noexcept {
     const FullTreeViewData tree_data = getEffectiveFullTreeData(num_elements, capacity, bucket_size);
-    return TreeViewSimple<T> {nodes + tree_data.root_level, tree_data.num_buckets_at_level};
+    return FullTreeView<T> {nodes + tree_data.root_level, tree_data.num_buckets_at_level};
   }
 }
 }

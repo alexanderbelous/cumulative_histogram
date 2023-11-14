@@ -10,7 +10,7 @@ namespace CumulativeHistogram_NS
 {
 namespace Detail_NS
 {
-  // Similar to TreeViewSimple, but stores the offset of the root of the subtree from
+  // Similar to FullTreeView, but stores the offset of the root of the subtree from
   // the root of some main tree instead of a pointer to the actual node.
   class PathEntry : public FullTreeViewBase {
    public:
