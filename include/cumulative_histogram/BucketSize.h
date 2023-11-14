@@ -23,6 +23,15 @@ template<class T>
 class DefaultBucketSize<T, std::enable_if_t<std::is_integral_v<T> && sizeof(T) == 4>> :
   public std::integral_constant<std::size_t, 128> {};
 
+// Partial specialization for 64-bit integer types: bucket size is 128.
+template<class T>
+class DefaultBucketSize<T, std::enable_if_t<std::is_integral_v<T> && sizeof(T) == 8>> :
+  public std::integral_constant<std::size_t, 128> {};
+
+// Full specialization for float.
+template<>
+class DefaultBucketSize<float> : public std::integral_constant<std::size_t, 64> {};
+
 }  // namespace Detail_NS
 
 // Type trait that provides the bucket size to use in the class CumulativeHistogram<T>.
