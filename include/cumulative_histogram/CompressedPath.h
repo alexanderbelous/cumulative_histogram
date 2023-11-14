@@ -123,6 +123,10 @@ namespace Detail_NS
     // TODO: make it O(1) - there's no need to zero out Entries.
     inline void clear() noexcept;
 
+    // Swaps the contentss of the current path with the given one.
+    // Time complexity: O(1).
+    inline void swap(CompressedPath& other) noexcept(std::is_nothrow_swappable_v<std::vector<Entry>&>);
+
     // Modifies the path so that it leads to the bucket following the one that the path currently leads to.
     // Time complexity: O(1).
     inline void pushBack();
@@ -196,6 +200,11 @@ namespace Detail_NS
     std::size_t num_buckets_ = 0;
     std::size_t root_level_ = 0;
   };
+
+  inline void swap(CompressedPath& lhs, CompressedPath& rhs)
+  noexcept(std::is_nothrow_swappable_v<std::vector<CompressedPath::Entry>&>) {
+    lhs.swap(rhs);
+  }
 
   constexpr CompressedPath::CompressedPath(CompressedPath&& other) noexcept:
     path_(std::move(other.path_)),
@@ -288,6 +297,13 @@ namespace Detail_NS
     path_.clear();
     num_buckets_ = 0;
     root_level_ = findDeepestNodeForElements(0, bucket_capacity_);
+  }
+
+  void CompressedPath::swap(CompressedPath& other) noexcept(std::is_nothrow_swappable_v<std::vector<Entry>&>) {
+    path_.swap(other.path_);
+    std::swap(bucket_capacity_, other.bucket_capacity_);
+    std::swap(num_buckets_, other.num_buckets_);
+    std::swap(root_level_, other.root_level_);
   }
 
   void CompressedPath::pushBack() {

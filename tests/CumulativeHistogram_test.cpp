@@ -491,6 +491,22 @@ TEST(CumulativeHistogram, ResizeToMoreElementsOutsideCapacity) {
   EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
+TEST(CumulativeHistogram, Swap) {
+  constexpr std::size_t kNumElements1 = 10;
+  constexpr std::size_t kNumElements2 = 20;
+  CumulativeHistogram<unsigned int> histogram1(kNumElements1, 24601);
+  CumulativeHistogram<unsigned int> histogram2(kNumElements2, 42);
+  const unsigned int* const data1 = histogram1.elements().data();
+  const unsigned int* const data2 = histogram2.elements().data();
+  histogram1.swap(histogram2);
+  EXPECT_EQ(histogram1.size(), kNumElements2);
+  EXPECT_EQ(histogram2.size(), kNumElements1);
+  EXPECT_EQ(histogram1.elements().data(), data2);
+  EXPECT_EQ(histogram2.elements().data(), data1);
+  EXPECT_TRUE(CheckPrefixSums(histogram1));
+  EXPECT_TRUE(CheckPrefixSums(histogram2));
+}
+
 TEST(CumulativeHistogram, TotalSum) {
   static constexpr std::size_t kNumElements = 5;
   CumulativeHistogram<int> histogram(kNumElements);

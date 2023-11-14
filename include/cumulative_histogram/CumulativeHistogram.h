@@ -205,6 +205,10 @@ class CumulativeHistogram {
   //                  O(N') otherwise.
   void resize(size_type num_elements);
 
+  // Swaps the contents of the current histogram with the given one.
+  // Time complexity: O(1).
+  void swap(CumulativeHistogram& other) noexcept(std::is_nothrow_swappable_v<std::vector<T>&>);
+
   // Sets the values of all elements to 0.
   // Time complexity: O(N).
   void setZero();
@@ -310,6 +314,14 @@ class CumulativeHistogram {
   // whenever a new node is added.
   Detail_NS::CompressedPath path_to_last_bucket_;
 };
+
+// Swaps the contents of the given histograms.
+// Time complexity: O(1).
+template<class T>
+void swap(CumulativeHistogram<T>& lhs, CumulativeHistogram<T>& rhs)
+noexcept(std::is_nothrow_swappable_v<std::vector<T>&>) {
+  lhs.swap(rhs);
+}
 
 // ======================================== Implementation ========================================
 
@@ -836,6 +848,15 @@ void CumulativeHistogram<T>::resize(size_type num_elements) {
   for (size_type i = 0; i < elements_to_add; ++i) {
     push_back(T{});
   }
+}
+
+template<Additive T>
+void CumulativeHistogram<T>::swap(CumulativeHistogram& other)
+noexcept(std::is_nothrow_swappable_v<std::vector<T>&>) {
+  elements_.swap(other.elements_);
+  std::swap(nodes_, other.nodes_);
+  std::swap(capacity_, other.capacity_);
+  path_to_last_bucket_.swap(other.path_to_last_bucket_);
 }
 
 template<Additive T>
