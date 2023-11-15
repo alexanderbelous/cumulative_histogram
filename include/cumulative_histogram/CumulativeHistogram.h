@@ -284,16 +284,6 @@ class CumulativeHistogram {
   // Returns an mutable TreeView for the currently effective tree.
   constexpr Detail_NS::TreeView<T> getMutableTreeView() noexcept;
 
-  // Returns the index of the effective root node.
-  // * nodes_[getRootIndex()] stores the sum of elements from the left subtree -
-  //   but only if there is a left subtree (i.e. if there current tree has at least 1 node).
-  // Time complexity: O(1).
-  constexpr size_type getRootIndex() const noexcept;
-
-  // Returns the maximum number of elements that can represented by the current tree.
-  //   num_elements <= capacityCurrent() <= capacity_
-  constexpr size_type capacityCurrent() const noexcept;
-
   // Values of elements in the histogram.
   std::vector<T> elements_;
   // Nodes of the tree.
@@ -496,33 +486,6 @@ constexpr Detail_NS::TreeView<T> CumulativeHistogram<T>::getMutableTreeView() no
 }
 
 template<Additive T>
-constexpr
-typename CumulativeHistogram<T>::size_type
-CumulativeHistogram<T>::getRootIndex() const noexcept {
-  // The maximum number of buckets the current tree can represent.
-  const std::size_t bucket_capacity = Detail_NS::countBuckets(capacity(), BucketSize);
-  // Number of buckets needed to represent the current elements.
-  const std::size_t num_buckets = Detail_NS::countBuckets(elements_.size(), BucketSize);
-  return Detail_NS::findDeepestNodeForElements(num_buckets, bucket_capacity);
-}
-
-template<Additive T>
-constexpr
-typename CumulativeHistogram<T>::size_type
-CumulativeHistogram<T>::capacityCurrent() const noexcept {
-  // The maximum number of buckets the current tree can represent.
-  const std::size_t bucket_capacity = Detail_NS::countBuckets(capacity(), BucketSize);
-  // Number of buckets needed to represent the current elements.
-  const std::size_t num_buckets = Detail_NS::countBuckets(elements_.size(), BucketSize);
-  const std::size_t level = Detail_NS::findDeepestNodeForElements(num_buckets, bucket_capacity);
-  if (level == 0) {
-    return capacity();
-  }
-  const std::size_t bucket_capacity_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, level);
-  return bucket_capacity_at_level * BucketSize;
-}
-
-template<Additive T>
 constexpr CumulativeHistogram<T>::CumulativeHistogram(const CumulativeHistogram& other):
   CumulativeHistogram(other.begin(), other.end())
 {}
@@ -662,10 +625,11 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
     return;
   }
 
-  // Get the capacity of the currently effective tree.
-  const size_type capacity_current = capacityCurrent();
+  // Depth of the currently effective tree. 0 means that the main tree is the currently effective tree.
+  const size_type root_idx_old = path_to_last_bucket_.rootLevel();
   // The maximum number of buckets the currently effective tree can represent.
-  const std::size_t bucket_capacity = Detail_NS::countBuckets(capacity_current, BucketSize);
+  const std::size_t bucket_capacity =
+    Detail_NS::countElementsInLeftmostSubtree(path_to_last_bucket_.bucketCapacity(), root_idx_old);
   // The maximum number of buckets the new tree can represent.
   const std::size_t bucket_capacity_new = Detail_NS::countBuckets(num_elements, BucketSize);
   // Compute the number of nodes in the new tree.
@@ -696,7 +660,6 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
     elements_.reserve(num_elements);
   } else {
     // Just copy the current tree as a subtree of the new one.
-    const size_type root_idx_old = getRootIndex();
     const size_type num_nodes_old = Detail_NS::countNodesInBucketizedTree(bucket_capacity);
     const std::span<T> effective_nodes_old { nodes_.get() + root_idx_old, num_nodes_old };
     const std::span<T> effective_nodes_new = new_nodes_span.subspan(level_for_the_original, num_nodes_old);
