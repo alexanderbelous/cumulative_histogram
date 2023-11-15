@@ -87,8 +87,8 @@ class CumulativeHistogram {
   using const_pointer = const T*;
   using iterator = typename std::vector<T>::const_iterator;
   using const_iterator = typename std::vector<T>::const_iterator;
-  using reverse_iterator = std::reverse_iterator<iterator>;
-  using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+  using reverse_iterator = typename std::vector<T>::const_reverse_iterator;
+  using const_reverse_iterator = typename std::vector<T>::const_reverse_iterator;
 
   // Constructs an empty histogram.
   // Time complexity: O(1).
@@ -628,13 +628,13 @@ typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::end() co
 template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::const_reverse_iterator CumulativeHistogram<T>::rbegin() const noexcept {
-  return std::make_reverse_iterator(end());
+  return elements_.rbegin();
 }
 
 template<Additive T>
 constexpr
 typename CumulativeHistogram<T>::const_reverse_iterator CumulativeHistogram<T>::rend() const noexcept {
-  return std::make_reverse_iterator(begin());
+  return elements_.rend();
 }
 
 template<Additive T>
