@@ -219,9 +219,7 @@ class CumulativeHistogram {
 
   // Access all elements.
   // Time complexity: O(1).
-  // TODO: change the type of the returned value to const std::vector<T>&.
-  //       Reason: vector can be used anywhere where span is expected, but not vice versa.
-  constexpr std::span<const T> elements() const noexcept;
+  constexpr const std::vector<T>& elements() const noexcept;
 
   // Access the specified element.
   // Throws std::out_of_range if k >= size().
@@ -862,8 +860,8 @@ noexcept(std::is_nothrow_swappable_v<std::vector<T>&>) {
 }
 
 template<Additive T>
-constexpr std::span<const T> CumulativeHistogram<T>::elements() const noexcept {
-  return std::span<const T>{elements_.data(), size()};
+constexpr const std::vector<T>& CumulativeHistogram<T>::elements() const noexcept {
+  return elements_;
 }
 
 template<Additive T>

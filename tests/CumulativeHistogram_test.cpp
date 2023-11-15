@@ -466,7 +466,6 @@ TEST(CumulativeHistogram, ResizeToMoreElementsWithinCapacity) {
 TEST(CumulativeHistogram, ResizeToMoreElementsOutsideCapacity) {
   constexpr std::array<unsigned int, 5> kElements = { 1, 2, 3, 4, 5 };
   CumulativeHistogram<unsigned int> histogram{ kElements.begin(), kElements.end() };
-  const std::span<const unsigned int> elements_old = histogram.elements();
   // Resize to more elements than the histogram can currently store.
   const std::size_t kNewSize = histogram.capacity() * 2;
   histogram.resize(kNewSize);
