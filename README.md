@@ -25,7 +25,7 @@ CumulaitveHistogram<int> histogram(10, 1);
 histogram.element(0);  // returns 1
 histogram.element(1);  // returns 1
 histogram.element(9);  // returns 1;
-std::span<const int> elements = histogram.elements();  // Elements are stored contiguously.
+const std::vector<int>& elements = histogram.elements();  // Elements are stored contiguously.
 
 // Compute prefix sums:
 histogram.prefixSum(0);   // returns 1
@@ -43,6 +43,8 @@ histogram.push_back(5);
 histogram.pop_back();
 
 // Find the first index k such that histogram.prefixSum(k) >= 10:
-auto [iter, prefix_sum] = histogram.lowerBound(10);            // iter points to element(2), prefix_sum == 10
+auto [iter, prefix_sum] = histogram.lowerBound(10);
+// iter points to element(2):
 const std::size_t k = std::distance(histogram.begin(), iter);  // k == 2
+// prefix_sum == histogram.prefixSum(2) == 10.
 ```
