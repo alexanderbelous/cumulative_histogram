@@ -219,6 +219,8 @@ class CumulativeHistogram {
 
   // Access all elements.
   // Time complexity: O(1).
+  // TODO: change the type of the returned value to const std::vector<T>&.
+  //       Reason: vector can be used anywhere where span is expected, but not vice versa.
   constexpr std::span<const T> elements() const noexcept;
 
   // Access the specified element.
@@ -948,13 +950,28 @@ T CumulativeHistogram<T>::totalSum() const {
   if (empty()) {
     throw std::logic_error("CumulativeHistogram::totalSum(): the histogram is empty.");
   }
+  const std::size_t root_level = path_to_last_bucket_.rootLevel();
+  const std::size_t bucket_capacity = path_to_last_bucket_.bucketCapacity();
+  const std::size_t num_buckets = path_to_last_bucket_.numBuckets();
+  const std::size_t num_buckets_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
   T result {};
-  Detail_NS::TreeView<const T> tree = getTreeView();
+  // Full view of the currently effective tree.
+  Detail_NS::FullTreeView<const T> tree {nodes_.get() + root_level, num_buckets_at_level};
   while (!tree.empty()) {
-    result += tree.root();
-    tree.switchToRightChild();
+    // The tree represents buckets [first; last).
+    // Its left subtree represents buckets [first; middle), and the right subtree represents [middle; last).
+    // The root of the tree stores the sum of all elements from the buckets of the left subtree.
+    // However, the root is only active if the right subtree is not empty.
+    // The right subtree is empty if all elements are in the left subtree, i.e. if num_buckets == middle.
+    if (num_buckets <= tree.pivot()) {
+      tree.switchToLeftChild();
+    }
+    else {
+      result += tree.root();
+      tree.switchToRightChild();
+    }
   }
-  // Add values of existing elements from the last bucket.
+  // Add elements from the last bucket.
   const size_type first = tree.bucketFirst() * BucketSize;
   return std::accumulate(elements_.begin() + first, elements_.end(), std::move(result));
 }

@@ -169,6 +169,15 @@ void BM_CumulativeHisogramPrefixSum(benchmark::State& state) {
 }
 BENCHMARK(BM_CumulativeHisogramPrefixSum)->RangeMultiplier(2)->Range(8, 256 << 10);
 
+void BM_CumulativeHisogramTotalSum(benchmark::State& state) {
+  const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
+  CumulativeHistogram<ElementTypeForBenchmark> histogram(num_elements);
+  for (auto _ : state) {
+    benchmark::DoNotOptimize(histogram.totalSum());
+  }
+}
+BENCHMARK(BM_CumulativeHisogramTotalSum)->RangeMultiplier(2)->Range(8, 256 << 10);
+
 void BM_ArrayOfPrefixSumsLowerBound(benchmark::State& state) {
   const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
   ArrayOfPrefixSums<ElementTypeForBenchmark> histogram(num_elements, 1);
