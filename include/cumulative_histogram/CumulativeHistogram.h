@@ -532,7 +532,7 @@ CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
     // Allocate and zero-initialize the nodes.
     nodes_ = std::make_unique<T[]>(num_nodes);
   }
-  path_to_last_bucket_.build(num_buckets, Detail_NS::countBuckets(capacity(), BucketSize));
+  path_to_last_bucket_.build(num_buckets, num_buckets);
 }
 
 template<Additive T>
