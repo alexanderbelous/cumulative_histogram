@@ -940,7 +940,7 @@ T CumulativeHistogram<T>::totalSum() const {
     // Its left subtree represents buckets [first; middle), and the right subtree represents [middle; last).
     // The root of the tree stores the sum of all elements from the buckets of the left subtree.
     // However, the root is only active if the right subtree is not empty.
-    // The right subtree is empty if all elements are in the left subtree, i.e. if num_buckets == middle.
+    // The right subtree is empty if all elements are in the left subtree, i.e. if num_buckets <= middle.
     if (num_buckets <= tree.pivot()) {
       tree.switchToLeftChild();
     }
