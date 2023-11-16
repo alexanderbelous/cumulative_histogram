@@ -148,5 +148,24 @@ namespace Detail_NS
     // Root of the tree.
     T* root_;
   };
+
+  // Constructs a FullTreeView for the currently effective tree representing the given elements.
+  // \param num_elements - the number of elements.
+  // \param capacity - the maximum number of elements that the tree can represent.
+  // \param bucket_size - the number of elements per bucket.
+  // \param nodes - all nodes of the tree.
+  // \return FullTreeView for the currently effective tree representing all `num_elements`.
+  // Time complexity: O(1).
+  template<class T>
+  constexpr FullTreeView<T> makeFullTreeView(std::size_t num_elements, std::size_t capacity,
+                                             std::size_t bucket_size, std::span<T> nodes) noexcept {
+    assert(num_elements <= capacity);
+    const std::size_t num_buckets = countBuckets(num_elements, bucket_size);
+    const std::size_t bucket_capacity = countBuckets(capacity, bucket_size);
+    assert(nodes.size() == countNodesInBucketizedTree(bucket_capacity));
+    const std::size_t root_level = findDeepestNodeForElements(num_buckets, bucket_capacity);
+    const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, root_level);
+    return FullTreeView<T> { nodes.data() + root_level, bucket_capacity_at_level };
+  }
 }
 }
