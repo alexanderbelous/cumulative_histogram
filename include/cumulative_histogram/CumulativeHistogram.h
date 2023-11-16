@@ -426,49 +426,56 @@ namespace Detail_NS {
     return std::accumulate(last_bucket.begin(), last_bucket.end(), std::move(result));
   }
 
-  // Initializes the nodes of the specified tree according to the values of the given elements.
-  // \param elements - values of elements for which we want to track prefix sums.
-  // \param tree - tree for some or all elements from `elements`.
+  // Initializes the active nodes of the given tree according to the elements.
+  // A node is active if there are elements in both its left and right subtrees.
+  // \param elements - all elements represented by the main tree.
+  // \param tree - some subtree of the main tree to build.
   // \param bucket_size - the number of elements per bucket.
-  // \returns the total sum of elements represented by `tree`.
+  // \return the sum of all elements represented by `tree`.
+  // Time complexity: O(M), where M is the number of elements from `elements` represented by `tree`
+  //                  (M <= elements.size()).
   template<class T>
-  T buildBucketizedTreeImpl(std::span<const T> elements, const TreeView<T>& tree, std::size_t bucket_size) {
-    TreeView<T> t = tree;
+  T buildBucketizedTree(std::span<const T> elements, const FullTreeView<T>& tree, std::size_t bucket_size) {
+    // Total number of active buckets.
+    const std::size_t num_buckets = countBuckets(elements.size(), bucket_size);
+    FullTreeView<T> t = tree;
     T total_sum{};
     while (!t.empty()) {
-      T total_sum_left = buildBucketizedTreeImpl(elements, t.leftChild(), bucket_size);
+      // Just switch to the left subtree if the root is inactive.
+      if (num_buckets <= t.pivot()) {
+        t.switchToLeftChild();
+        continue;
+      }
+      T total_sum_left = buildBucketizedTree(elements, t.leftChild(), bucket_size);
       total_sum += std::as_const(total_sum_left);
       t.root() = std::move(total_sum_left);
       t.switchToRightChild();
     }
+    // Add elements from the last active bucket represented by the input tree.
     assert(t.numBuckets() == 1);
-    const std::size_t bucket_index = t.bucketFirst();
-    const std::size_t element_first = bucket_index * bucket_size;
+    const std::size_t element_first = t.bucketFirst() * bucket_size;
     const std::size_t num_elements = std::min(elements.size() - element_first, bucket_size);
     const std::span<const T> elements_in_bucket = elements.subspan(element_first, num_elements);
     return std::accumulate(elements_in_bucket.begin(), elements_in_bucket.end(), std::move(total_sum));
   }
 
-  // Builds the tree for the given elements.
-  // Expects that:
-  // 1) 0 <= elements.size() <= capacity
-  // 2) nodes.size() == countNodesInBucketizedTree(countBuckets(capacity, bucket_size))
-  // Time complexity: O(N), where N = elements.size().
-  // TODO: change the API so that `nodes` is only required to have enough nodes to represent all elements.
-  //       Or just pass const std::vector& and let buildTree() decide the optimal structure.
+  // Constructs a mutable FullTreeView for the currently effective tree representing the given elements.
+  // \param num_elements - the number of elements.
+  // \param capacity - the maximum number of elements that the tree can represent.
+  // \param bucket_size - the number of elements per bucket.
+  // \param nodes - all nodes of the tree.
+  // \return FullTreeView for the currently effective tree representing all num_elements.
+  // Time complexity: O(1).
   template<class T>
-  void buildBucketizedTree(std::span<const T> elements, std::span<T> nodes, std::size_t capacity, std::size_t bucket_size) {
-    if (elements.empty()) {
-      return;
-    }
-    assert(nodes.size() == countNodesInBucketizedTree(countBuckets(capacity, bucket_size)));
-    const TreeViewData tree_data = getEffectiveTreeData(elements.size(), capacity, bucket_size);
-    if (tree_data.num_nodes_at_level == 0) {
-      return;
-    }
-    TreeView<T> tree{ nodes.subspan(tree_data.root_level, tree_data.num_nodes_at_level),
-                      tree_data.num_buckets, tree_data.bucket_capacity_at_level };
-    buildBucketizedTreeImpl(elements, tree, bucket_size);
+  FullTreeView<T> makeFullTreeView(std::size_t num_elements, std::size_t capacity,
+                                   std::size_t bucket_size, std::span<T> nodes) {
+    assert(num_elements <= capacity);
+    const std::size_t num_buckets = countBuckets(num_elements, bucket_size);
+    const std::size_t bucket_capacity = countBuckets(capacity, bucket_size);
+    assert(nodes.size() == countNodesInBucketizedTree(bucket_capacity));
+    const std::size_t root_level = findDeepestNodeForElements(num_buckets, bucket_capacity);
+    const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, root_level);
+    return FullTreeView<T> { nodes.data() + root_level, bucket_capacity_at_level };
   }
 
 }  // namespace Detail_NS
@@ -532,12 +539,16 @@ constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(const Cumula
   // TODO: check the special case when the other tree can be copied.
   elements_.clear();
   elements_.insert(elements_.end(), other.begin(), other.end());
-  const size_type num_buckets = Detail_NS::countBuckets(capacity_, BucketSize);
-  const size_type num_nodes = Detail_NS::countNodesInBucketizedTree(num_buckets);
-  const std::span<T> nodes{ nodes_.get(), num_nodes };
-  Detail_NS::buildBucketizedTree<T>(elements_, nodes, capacity_, BucketSize);
-  path_to_last_bucket_.build(Detail_NS::countBuckets(size(), BucketSize),
-                             Detail_NS::countBuckets(capacity(), BucketSize));
+  // Compute the new number of active buckets.
+  const size_type num_buckets = Detail_NS::countBuckets(size(), BucketSize);
+  // Construct the path to the last active bucket.
+  path_to_last_bucket_.build(num_buckets, path_to_last_bucket_.bucketCapacity());
+  // Get the full view of the currently effective tree.
+  const Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
+  // Update the active nodes of the currently effective tree.
+  if (!tree.empty()) {
+    Detail_NS::buildBucketizedTree<T>(elements_, tree, BucketSize);
+  }
   return *this;
 }
 
@@ -579,16 +590,17 @@ CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
   elements_(std::move(elements)),
   capacity_(elements_.size())
 {
-  // TODO: only construct nodes that are needed to represent the current level.
   const size_type num_buckets = Detail_NS::countBuckets(capacity_, BucketSize);
+  // Construct a path to the last bucket.
+  path_to_last_bucket_.build(num_buckets, num_buckets);
+  // TODO: only construct nodes that are needed to represent the current level.
   const size_type num_nodes = Detail_NS::countNodesInBucketizedTree(num_buckets);
   if (num_nodes != 0) {
     // Allocate and default-initialize the nodes - there's no need to zero-initialize them.
     nodes_ = std::make_unique_for_overwrite<T[]>(num_nodes);
-    const std::span<T> nodes{ nodes_.get(), num_nodes };
-    Detail_NS::buildBucketizedTree<T>(elements_, nodes, capacity_, BucketSize);
+    const Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
+    Detail_NS::buildBucketizedTree<T>(elements_, tree, BucketSize);
   }
-  path_to_last_bucket_.build(num_buckets, Detail_NS::countBuckets(capacity(), BucketSize));
 }
 
 template<Additive T>
@@ -677,7 +689,13 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
   // Construct the new tree.
   if (level_for_the_original == static_cast<std::size_t>(-1)) {
     // The old tree is not a subtree of the new tree, so we have to build the new one from scratch.
-    Detail_NS::buildBucketizedTree<T>(elements_, new_nodes_span, num_elements, BucketSize);
+    // Construct a FullTreeView for the currently effective subtree of the new tree.
+    const Detail_NS::FullTreeView<T> tree_new =
+      Detail_NS::makeFullTreeView(elements_.size(), num_elements, BucketSize, new_nodes_span);
+    // Initialize the active nodes of the new tree.
+    if (!tree_new.empty()) {
+      Detail_NS::buildBucketizedTree<T>(elements_, tree_new, BucketSize);
+    }
     // Reserve new data for elements.
     elements_.reserve(num_elements);
   } else {
@@ -745,12 +763,12 @@ void CumulativeHistogram<T>::setZero() {
 template<Additive T>
 void CumulativeHistogram<T>::fill(const T& value) {
   std::fill(elements_.begin(), elements_.end(), value);
-  const std::size_t num_buckets = Detail_NS::countBuckets(capacity_, BucketSize);
-  const std::size_t num_nodes = Detail_NS::countNodesInBucketizedTree(num_buckets);
-  const std::span<T> nodes{ nodes_.get(), num_nodes };
+  const Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
   // This can be optimized for types for which multiplication is defined and `x+x+x...+x == x*N`.
   // However, the time complexity will still be O(N), so whatever.
-  Detail_NS::buildBucketizedTree<T>(elements_, nodes, capacity_, BucketSize);
+  if (!tree.empty()) {
+    Detail_NS::buildBucketizedTree<T>(elements_, tree, BucketSize);
+  }
 }
 
 template<Additive T>

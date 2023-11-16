@@ -124,6 +124,20 @@ namespace Detail_NS
       root_ += FullTreeViewBase::switchToRightChild();
     }
 
+    // Returns the immediate left subtree.
+    constexpr FullTreeView leftChild() const noexcept {
+      FullTreeView tree = *this;
+      tree.switchToLeftChild();
+      return tree;
+    }
+
+    // Returns the immediate right subtree.
+    constexpr FullTreeView rightChild() const noexcept {
+      FullTreeView tree = *this;
+      tree.switchToRightChild();
+      return tree;
+    }
+
    private:
     // Root of the tree.
     T* root_;
