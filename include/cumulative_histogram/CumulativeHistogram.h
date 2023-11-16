@@ -4,7 +4,6 @@
 #include <cumulative_histogram/CompressedPath.h>
 #include <cumulative_histogram/CumulativeHistogramImpl.h>
 #include <cumulative_histogram/FullTreeView.h>
-#include <cumulative_histogram/TreeView.h>
 
 #include <algorithm>
 #include <cassert>
@@ -278,12 +277,6 @@ class CumulativeHistogram {
   std::pair<const_iterator, T> upperBound(const T& value, Compare cmp) const;
 
  private:
-  // Returns an immutable TreeView for the currently effective tree.
-  constexpr Detail_NS::TreeView<const T> getTreeView() const noexcept;
-
-  // Returns an mutable TreeView for the currently effective tree.
-  constexpr Detail_NS::TreeView<T> getMutableTreeView() noexcept;
-
   // Returns an immutable FullTreeView for the currently effective tree.
   constexpr Detail_NS::FullTreeView<const T> getFullTreeView() const noexcept;
 
@@ -479,24 +472,6 @@ namespace Detail_NS {
   }
 
 }  // namespace Detail_NS
-
-template<Additive T>
-constexpr Detail_NS::TreeView<const T> CumulativeHistogram<T>::getTreeView() const noexcept {
-  const Detail_NS::TreeViewData tree_data = Detail_NS::getEffectiveTreeData(size(), capacity(), BucketSize);
-  return Detail_NS::TreeView<const T> {
-    std::span<const T> { nodes_.get() + tree_data.root_level, tree_data.num_nodes_at_level },
-      tree_data.num_buckets, tree_data.bucket_capacity_at_level
-  };
-}
-
-template<Additive T>
-constexpr Detail_NS::TreeView<T> CumulativeHistogram<T>::getMutableTreeView() noexcept {
-  const Detail_NS::TreeViewData tree_data = Detail_NS::getEffectiveTreeData(size(), capacity(), BucketSize);
-  return Detail_NS::TreeView<T> {
-    std::span<T> { nodes_.get() + tree_data.root_level, tree_data.num_nodes_at_level },
-      tree_data.num_buckets, tree_data.bucket_capacity_at_level
-  };
-}
 
 template<Additive T>
 constexpr Detail_NS::FullTreeView<const T> CumulativeHistogram<T>::getFullTreeView() const noexcept {
@@ -740,24 +715,12 @@ template<Additive T>
 void CumulativeHistogram<T>::setZero() {
   const T zero {};
   std::fill(elements_.begin(), elements_.end(), zero);
-  // Zero-out the active nodes.
-  Detail_NS::TreeView<T> tree = getMutableTreeView();
-  // Shortcut: if the current tree is at full capacity, just zero-out all
-  // of its nodes and return.
-  if (tree.numBuckets() == tree.bucketCapacity()) {
-    const std::span<T> nodes = tree.nodes();
-    std::fill_n(nodes.data(), nodes.size(), zero);
-    return;
-  }
-  while (!tree.empty()) {
-    const std::span<T> nodes = tree.nodes();
-    // The left subtree is always full, therefore all its nodes are active.
-    const std::size_t num_nodes_left = nodes.size() / 2;  // ceil((nodes.size() - 1) / 2)
-    // Zero-initialize the root and the nodes of the left subtree.
-    std::fill_n(nodes.data(), 1 + num_nodes_left, zero);
-    // Switch to the effective right subtree.
-    tree.switchToRightChild();
-  }
+  // Full view of the currently effective tree.
+  const Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
+  // Zero-out all nodes of the currently effective tree.
+  // TODO: only zero-out the active nodes.
+  const std::span<T> nodes = tree.nodes();
+  std::fill(nodes.begin(), nodes.end(), zero);
 }
 
 template<Additive T>
@@ -878,12 +841,6 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
   if (k >= size()) {
     throw std::out_of_range("CumulativeHistogram::increment(): k is out of range.");
   }
-  // We are using FullTreeView here even though TreeView can skip inactive nodes in O(1)
-  // time. The reason is that traversing FullTreeView is much faster - switching to the
-  // left/right subtree only requires 3 or 4 instructions, but for TreeView it's much more.
-  // This is essentially the constant factor of our O(logN) time complexity, and by
-  // using FullTreeView we improve the average time complexity, whereas TreeView
-  // optimizes the best-case time complexity at the cost of greater average time complexity.
   const size_type k_plus_one = k + 1;
   // Full view of the currently effective tree.
   Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();

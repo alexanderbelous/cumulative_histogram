@@ -1,5 +1,5 @@
 #include <cumulative_histogram/CompressedPath.h>
-#include <cumulative_histogram/TreeView.h>
+#include <cumulative_histogram/CumulativeHistogramImpl.h>
 
 #include <gtest/gtest.h>
 
@@ -71,21 +71,76 @@ static constexpr bool operator!=(const CompressedPath& lhs, const CompressedPath
 
 namespace {
 
-// Like TreeView, but instead of storing a pointer to the root node, it stores its index.
-class TreeViewNumeric : public TreeViewBase {
-public:
+// Similar to FullTreeView, but
+//   * skips inactive nodes when switching to subtrees.
+//   * stores the absolute index of the root node instead of a pointer.
+class TreeViewNumeric {
+ public:
   // Expects that 0 < num_buckets <= bucket_capacity.
   constexpr TreeViewNumeric(std::size_t num_buckets,
                             std::size_t bucket_capacity) noexcept :
     TreeViewNumeric(findDeepestNodeForElements(num_buckets, bucket_capacity), num_buckets, bucket_capacity)
   {}
 
-  constexpr std::size_t root() const {
+  // Returns true if the tree has no nodes, false otherwise.
+  constexpr bool empty() const noexcept {
+    // Same as numNodes() == 0
+    return bucket_capacity_ <= 1;
+  }
+
+  // Returns 0-based index of the root node of the current tree.
+  constexpr std::size_t root() const noexcept {
     return root_;
   }
 
+  constexpr std::size_t numNodes() const noexcept {
+    return countNodesInBucketizedTree(bucket_capacity_);
+  }
+
+  constexpr std::size_t bucketFirst() const noexcept {
+    return bucket_first_;
+  }
+
+  constexpr std::size_t numBuckets() const noexcept {
+    return num_buckets_;
+  }
+
+  constexpr std::size_t bucketCapacity() const noexcept {
+    return bucket_capacity_;
+  }
+
+  // Returns 0-based index of the last bucket (inclusive) of the left subtree.
+  constexpr std::size_t pivot() const noexcept {
+    return bucket_first_ + (bucket_capacity_ - 1) / 2;
+  }
+
+  // Switches to the immediate left subtree of the current tree.
   constexpr void switchToLeftChild() noexcept {
-    root_ += TreeViewBase::switchToLeftChild();
+    // The left subtree (if it exists) should always be at full capacity.
+    ++bucket_capacity_ >>= 1;
+    //bucket_capacity_ = (bucket_capacity_ + 1) / 2;  // ceil(capacity_ / 2)
+    num_buckets_ = bucket_capacity_;
+    root_ += 1;
+  }
+
+  // Switches to the effective right subtree from the current root.
+  constexpr void switchToRightChild() noexcept {
+    const std::size_t bucket_capacity_left = (bucket_capacity_ + 1) / 2;  // ceil(capacity_ / 2)
+    const std::size_t bucket_capacity_right = bucket_capacity_ / 2;       // floor(capacity_ / 2)
+    const std::size_t num_nodes_left = countNodesInBucketizedTree(bucket_capacity_left);
+
+    bucket_first_ += bucket_capacity_left;
+    num_buckets_ -= bucket_capacity_left;
+    // Find the deepest leftmost subtree of the immediate right subtree that represents all
+    // real elements of the right subtree.
+    const std::size_t level = findDeepestNodeForElements(num_buckets_, bucket_capacity_right);
+    bucket_capacity_ = countElementsInLeftmostSubtree(bucket_capacity_right, level);
+    // Skip the 0th node because it's the root.
+    // Skip the next `num_nodes_left` because they belong to the left subtree.
+    // Skip the next `level` nodes because those are nodes between the root of our
+    //      "effective" right subtree and the root of the current tree.
+    // TODO: this is the same as bucket_capacity_left + level
+    root_ += (1 + num_nodes_left + level);
   }
 
   constexpr TreeViewNumeric leftChild() const noexcept {
@@ -94,26 +149,31 @@ public:
     return tree;
   }
 
-  constexpr void switchToRightChild() noexcept {
-    root_ += TreeViewBase::switchToRightChild();
-  }
-
   constexpr TreeViewNumeric rightChild() const noexcept {
     TreeViewNumeric tree = *this;
     tree.switchToRightChild();
     return tree;
   }
 
-private:
+ private:
   // Expects that 0 < num_buckets <= bucket_capacity.
   constexpr TreeViewNumeric(std::size_t root_level,
                             std::size_t num_buckets,
                             std::size_t bucket_capacity) noexcept :
-    TreeViewBase(num_buckets, countElementsInLeftmostSubtree(bucket_capacity, root_level)),
-    root_(root_level)
+    root_(root_level),
+    bucket_first_(0),
+    num_buckets_(num_buckets),
+    bucket_capacity_(countElementsInLeftmostSubtree(bucket_capacity, root_level))
   {}
 
+  // 0-based index of the root node.
   std::size_t root_;
+  // Index of the first bucket represented by the tree.
+  std::size_t bucket_first_;
+  // The number of real buckets represented by the tree.
+  std::size_t num_buckets_;
+  // The maximum number of buckets this tree can represent.
+  std::size_t bucket_capacity_;
 };
 
 // Checks that the path actually leads to the last bucket.

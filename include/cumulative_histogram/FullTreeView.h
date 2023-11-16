@@ -98,6 +98,12 @@ namespace Detail_NS
     std::size_t num_buckets_;
   };
 
+  // High-level API for interacing with the implicit tree data structure.
+  // Note that FullTreeView is unaware of the fact that some nodes may be inactive - it simply provides a way
+  // to traverse the tree. While it's possible to design an API that would skip inactive nodes, and it might
+  // even perform better in the best case (i.e., traversing from the root to a leaf may take O(1) in the best
+  // case, while for FullTreeView it's always O(logN)), FullTreeView will still perform better on average,
+  // because the constant factor will be smaller.
   template<class T>
   class FullTreeView : public FullTreeViewBase {
    public:
