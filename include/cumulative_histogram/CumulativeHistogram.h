@@ -970,9 +970,15 @@ CumulativeHistogram<T>::lowerBound(const T& value, Compare cmp) const {
   }
   T prefix_sum_before_lower {};
   T prefix_sum_upper {};
-  // Tree representing the elements [k_lower; k_upper] = [0; N-1].
-  Detail_NS::TreeView<const T> tree = getTreeView();
+  // Full view of the currently effective tree, representing the elements [k_lower; k_upper] = [0; N-1].
+  Detail_NS::FullTreeView<const T> tree = getFullTreeView();
+  const std::size_t num_buckets = path_to_last_bucket_.numBuckets();
   while (!tree.empty()) {
+    // If the right subtree is empty, just switch to the left subtree.
+    if (num_buckets <= tree.pivot()) {
+      tree.switchToLeftChild();
+      continue;
+    }
     // The root of the tree stores the sum of all elements [k_lower; middle].
     // Sum of elements [0; middle]
     T prefix_sum_middle = prefix_sum_before_lower + tree.root();
@@ -991,20 +997,26 @@ CumulativeHistogram<T>::lowerBound(const T& value, Compare cmp) const {
   }
   // We know that cmp(prefixSum(i), value) == true for all i < k_lower
   const std::size_t k_lower = tree.bucketFirst() * BucketSize;
-  // if k_upper_theoretical < size(), then cmp(prefixSum(i), value) == false for all i >= k_upper_theoretical
+  // If k_upper_theoretical < size(), then cmp(prefixSum(i), value) == false for all i >= k_upper_theoretical
+  // and prefix_sum_upper = prefixSum(k_upper_theoretical).
+  // Otherwise, it means that we haven't yet encountered any i such that cmp(prefixSum(i), value) == false, and
+  // prefix_sum_upper remains value-initialized.
   const std::size_t k_upper_theoretical = k_lower + BucketSize;
   const std::size_t k_upper = std::min(k_upper_theoretical, size());
   T prefix_sum = std::move(prefix_sum_before_lower);
-  for (std::size_t i = k_lower; i < k_upper; ++i) {
-    prefix_sum += elements_[i];
+  const_iterator iter = begin() + k_lower;
+  const const_iterator iter_upper = begin() + k_upper;
+  for (; iter != iter_upper; ++iter) {
+    prefix_sum += *iter;
     if (!cmp(prefix_sum, value)) {
-      return { begin() + i, std::move(prefix_sum) };
+      return { iter, std::move(prefix_sum) };
     }
   }
-  if (k_upper_theoretical < size()) {
-    return { begin() + k_upper_theoretical, prefix_sum_upper };
-  }
-  return { end(), T{} };
+  // If k_upper < k_upper_theoretical, then k_upper == size() and therefore there is no i such that
+  // cmp(prefixSum(i), value) == false. prefix_sum_upper is still value-initialized.
+  // Otherwise, k_upper == k_upper_theoretical, which is the answer, and prefix_sum_upper has been
+  // initialized with prefixSum(k_upper_theoretical).
+  return { iter, std::move(prefix_sum_upper) };
 }
 
 template<Additive T>
