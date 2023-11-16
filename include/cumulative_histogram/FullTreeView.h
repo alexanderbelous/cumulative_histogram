@@ -128,43 +128,5 @@ namespace Detail_NS
     // Root of the tree.
     T* root_;
   };
-
-  struct FullTreeViewData {
-    // Depth of the root of the currently effective tree.
-    std::size_t root_level;
-    // The number of buckets at the current level.
-    std::size_t num_buckets_at_level;
-  };
-
-  constexpr FullTreeViewData getEffectiveFullTreeData(std::size_t num_elements,
-                                                      std::size_t capacity,
-                                                      std::size_t bucket_size) noexcept {
-    assert(bucket_size > 1);
-    assert(num_elements <= capacity);
-    // Number of buckets needed to represent the current elements.
-    const std::size_t num_buckets = countBuckets(num_elements, bucket_size);
-    // The maximum number of buckets the current tree can represent.
-    const std::size_t bucket_capacity = countBuckets(capacity, bucket_size);
-    // Level of the currently effective tree.
-    const std::size_t root_level = findDeepestNodeForElements(num_buckets, bucket_capacity);
-    // The number of buckets at the current level.
-    const std::size_t bucket_capacity_at_level = countElementsInLeftmostSubtree(bucket_capacity, root_level);
-    return FullTreeViewData{ root_level, bucket_capacity_at_level };
-  }
-
-  // Constructs a FullTreeView for the currently effective tree.
-  // \param nodes - pointer to the nodes array of the main tree.
-  // \param num_elements - the number of currently active elements.
-  // \param capacity - the maximum number of elements the tree can represent.
-  // \param bucket_size - the number of elements per bucket.
-  // \return a FullTreeView for the currently effective tree representing `num_elements` elements.
-  template<class T>
-  constexpr FullTreeView<T> makeFullTreeView(T* nodes,
-                                               std::size_t num_elements,
-                                               std::size_t capacity,
-                                               std::size_t bucket_size) noexcept {
-    const FullTreeViewData tree_data = getEffectiveFullTreeData(num_elements, capacity, bucket_size);
-    return FullTreeView<T> {nodes + tree_data.root_level, tree_data.num_buckets_at_level};
-  }
 }
 }

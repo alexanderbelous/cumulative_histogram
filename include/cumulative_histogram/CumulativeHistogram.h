@@ -284,6 +284,12 @@ class CumulativeHistogram {
   // Returns an mutable TreeView for the currently effective tree.
   constexpr Detail_NS::TreeView<T> getMutableTreeView() noexcept;
 
+  // Returns an immutable FullTreeView for the currently effective tree.
+  constexpr Detail_NS::FullTreeView<const T> getFullTreeView() const noexcept;
+
+  // Returns an mutable FullTreeView for the currently effective tree.
+  constexpr Detail_NS::FullTreeView<T> getMutableFullTreeView() noexcept;
+
   // Values of elements in the histogram.
   std::vector<T> elements_;
   // Nodes of the tree.
@@ -483,6 +489,22 @@ constexpr Detail_NS::TreeView<T> CumulativeHistogram<T>::getMutableTreeView() no
     std::span<T> { nodes_.get() + tree_data.root_level, tree_data.num_nodes_at_level },
       tree_data.num_buckets, tree_data.bucket_capacity_at_level
   };
+}
+
+template<Additive T>
+constexpr Detail_NS::FullTreeView<const T> CumulativeHistogram<T>::getFullTreeView() const noexcept {
+  const std::size_t root_level = path_to_last_bucket_.rootLevel();
+  const std::size_t bucket_capacity = path_to_last_bucket_.bucketCapacity();
+  const std::size_t num_buckets_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
+  return Detail_NS::FullTreeView<const T>{ nodes_.get() + root_level, num_buckets_at_level };
+}
+
+template<Additive T>
+constexpr Detail_NS::FullTreeView<T> CumulativeHistogram<T>::getMutableFullTreeView() noexcept {
+  const std::size_t root_level = path_to_last_bucket_.rootLevel();
+  const std::size_t bucket_capacity = path_to_last_bucket_.bucketCapacity();
+  const std::size_t num_buckets_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
+  return Detail_NS::FullTreeView<T>{ nodes_.get() + root_level, num_buckets_at_level };
 }
 
 template<Additive T>
@@ -845,9 +867,8 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
   // using FullTreeView we improve the average time complexity, whereas TreeView
   // optimizes the best-case time complexity at the cost of greater average time complexity.
   const size_type k_plus_one = k + 1;
-  // Tree representing the elements [0; N).
-  Detail_NS::FullTreeView<T> tree =
-    Detail_NS::makeFullTreeView<T>(nodes_.get(), size(), capacity(), BucketSize);
+  // Full view of the currently effective tree.
+  Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
   while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [first; middle).
     const std::size_t middle = tree.pivot() * BucketSize;
@@ -884,9 +905,8 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
     return totalSum();
   }
   T result {};
-  // Tree representing the elements [0; N).
-  Detail_NS::FullTreeView<const T> tree =
-    Detail_NS::makeFullTreeView<const T>(nodes_.get(), size(), capacity(), BucketSize);
+  // Full view of the currently effective tree.
+  Detail_NS::FullTreeView<const T> tree = getFullTreeView();
   while (!tree.empty()) {
     // The root of the tree stores the sum of all elements [first; middle).
     const std::size_t middle = tree.pivot() * BucketSize;
@@ -911,13 +931,10 @@ T CumulativeHistogram<T>::totalSum() const {
   if (empty()) {
     throw std::logic_error("CumulativeHistogram::totalSum(): the histogram is empty.");
   }
-  const std::size_t root_level = path_to_last_bucket_.rootLevel();
-  const std::size_t bucket_capacity = path_to_last_bucket_.bucketCapacity();
   const std::size_t num_buckets = path_to_last_bucket_.numBuckets();
-  const std::size_t num_buckets_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
   T result {};
   // Full view of the currently effective tree.
-  Detail_NS::FullTreeView<const T> tree {nodes_.get() + root_level, num_buckets_at_level};
+  Detail_NS::FullTreeView<const T> tree = getFullTreeView();
   while (!tree.empty()) {
     // The tree represents buckets [first; last).
     // Its left subtree represents buckets [first; middle), and the right subtree represents [middle; last).
