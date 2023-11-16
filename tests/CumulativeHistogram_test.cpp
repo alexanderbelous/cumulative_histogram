@@ -580,9 +580,14 @@ TEST(CumulativeHistogram, PrefixSum) {
 
 TEST(CumulativeHistogram, LowerBound) {
   constexpr std::array<unsigned int, 9> kElements = {1, 2, 3, 4, 5, 0, 0, 1, 2};
-  const CumulativeHistogram<unsigned int> histogram {kElements.begin(), kElements.end()};
-  for (unsigned int value = 0; value < 20; ++value) {
-    EXPECT_TRUE(CheckLowerBound(histogram, value));
+  constexpr std::size_t kCapacityMin = 9;
+  constexpr std::size_t kCapacityMax = 20;
+  for (std::size_t capacity = kCapacityMin; capacity <= kCapacityMax; ++capacity) {
+    CumulativeHistogram<unsigned int> histogram{ kElements.begin(), kElements.end() };
+    histogram.reserve(capacity);
+    for (unsigned int value = 0; value < 20; ++value) {
+      EXPECT_TRUE(CheckLowerBound(histogram, value));
+    }
   }
 }
 
