@@ -612,6 +612,8 @@ TEST(CumulativeHistogram, IsSubtree) {
   using Detail_NS::findLeftmostSubtreeWithExactCapacity;
   constexpr std::size_t kNotSubtree = static_cast<std::size_t>(-1);
 
+  static_assert(findLeftmostSubtreeWithExactCapacity(0, 0) == 0);
+  static_assert(findLeftmostSubtreeWithExactCapacity(0, 1) == kNotSubtree);
   static_assert(findLeftmostSubtreeWithExactCapacity(0, 2) == kNotSubtree);
   static_assert(findLeftmostSubtreeWithExactCapacity(0, 3) == kNotSubtree);
   static_assert(findLeftmostSubtreeWithExactCapacity(1, 2) == 1);

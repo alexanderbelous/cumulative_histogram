@@ -120,23 +120,22 @@ namespace Detail_NS
     return ceilLog2(ratio) - 1;
   }
 
-  // Find the depth of the leftmost subtree that represents exactly the specified number of elements.
-  // \param capacity_to_find - capacity of the subtree to find.
-  // \param capacity - capacity of the full tree.
-  // \return depth of the leftmost subtree that represents exactly `capacity_to_find` elements,
+  // Find the depth of the leftmost subtree that represents exactly the specified number of buckets.
+  // \param capacity_to_find - bucket capacity of the subtree to find.
+  // \param capacity - bucket capacity of the full tree.
+  // \return depth of the leftmost subtree that represents exactly `capacity_to_find` buckets,
   //         or static_cast<std::size_t>(-1) if there is no such subtree.
+  //         Note that if capacity > 0, then no subtree of the full tree represents exactly 0 buckets,
+  //         so the function will return -1. However, if both capacity and capacity_to_find are 0, then
+  //         the function returns 0.
   // Time complexity: O(1).
   constexpr std::size_t findLeftmostSubtreeWithExactCapacity(std::size_t capacity_to_find,
                                                              std::size_t capacity) noexcept {
-    // TODO: comments are out of date.
-    // Edge cases:
-    // 1) A smaller tree cannot contain a larger tree.
-    // 2) Our trees always have capacity >= 2. Trees of capacity == 1 are problematic - we forbid
-    //    nodes with fewer than 2 elements, so a tree representing 1 element cannot be anyone's subtree.
-    if (capacity < capacity_to_find || capacity_to_find < 1) {
+    // Edge case: a smaller tree cannot contain a larger tree.
+    if (capacity < capacity_to_find) {
       return static_cast<std::size_t>(-1);
     }
-    // Find the deepest leftmost node of the new tree that contains at least `capacity_to_find` elements.
+    // Find the deepest leftmost node of the new tree that contains at least `capacity_to_find` buckets.
     const std::size_t level = findDeepestNodeForElements(capacity_to_find, capacity);
     // Get the number of elements that this node contains.
     const std::size_t num_elements_at_level = countElementsInLeftmostSubtree(capacity, level);
