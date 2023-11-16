@@ -156,13 +156,6 @@ namespace Detail_NS
     // Time complexity: O(1).
     constexpr bool lastEntryIsLeftSubtree() const noexcept;
 
-    // Finds the subtree that will need to be extended after push_back().
-    // \return a PathEntry to the subtree that will need to be extended after push_back(), i.e. the largest
-    // subtree at full capacity that contains the last bucket. Note that this is always the left subtree of some
-    // other tree.
-    // Time complexity: O(1).
-    constexpr PathEntry findTreeToExtendAfterPushBack() noexcept;
-
    private:
     // Modifies the path so that it leads to the immediate parent of the node that it currently leads to.
     // Time complexity: O(1).
@@ -204,6 +197,34 @@ namespace Detail_NS
   inline void swap(CompressedPath& lhs, CompressedPath& rhs)
   noexcept(std::is_nothrow_swappable_v<std::vector<CompressedPath::Entry>&>) {
     lhs.swap(rhs);
+  }
+
+  // Finds the subtree that will need to be extended after adding a bucket to the given tree.
+  // \param path_to_last_bucket - compressed path to the currently last bucket in the tree.
+  // \return a PathEntry to the subtree that will need to be extended after adding one more bucket to the
+  //         tree described by path_to_last_bucket, i.e. the largest subtree at full capacity that contains
+  //         the last bucket. Note that this is always the left subtree of some other tree.
+  // The behavior is undefined if the tree currently has 0 buckets (in that case no nodes will need to
+  // be constructed after adding the first bucket).
+  // Time complexity: O(1).
+  constexpr PathEntry findTreeToExtendAfterPushBack(const CompressedPath& path_to_last_bucket) noexcept {
+    assert(path_to_last_bucket.numBuckets() > 0);
+    const std::span<const CompressedPath::Entry> path = path_to_last_bucket.path();
+    // 1. Edge case - if there is only 1 bucket, then the path is empty (because the tree has 0 nodes),
+    //    and the tree that will need to be extended is the only leaf.
+    // 2. If there is exactly 1 entry in the path, then it must be the rightmost subtree (at some level K) of
+    //    the root of the currently effective tree. In this case we should extend the currently effective tree.
+    if (path.size() < 2) {
+      return path_to_last_bucket.getRootEntry();
+    }
+    // Otherwise, if the last entry is a left subtree of some node, then this leaf is the subtree that will
+    // need to be extended.
+    if (path_to_last_bucket.lastEntryIsLeftSubtree()) {
+      return path.back().node;
+    }
+    // Otherwise, the last entry is the rightmost subtree (at level K) of some node, which means that the tree
+    // that will need to be extended is that parent node.
+    return path[path.size() - 2].node;
   }
 
   constexpr CompressedPath::CompressedPath(CompressedPath&& other) noexcept:
@@ -407,25 +428,6 @@ namespace Detail_NS
     return path_.size() % 2 == 0;
   }
 
-  constexpr PathEntry CompressedPath::findTreeToExtendAfterPushBack() noexcept {
-    assert(num_buckets_ > 0);
-    // 1. Edge case - if there is only 1 bucket, then the path is empty (because the tree has 0 nodes),
-    //    and the tree that will need to be extended is the only leaf.
-    // 2. If there is exactly 1 entry in the path, then it must be the rightmost subtree (at some level K) of
-    //    the root of the currently effective tree. In this case we should extend the currently effective tree.
-    if (path_.size() < 2) {
-      return getRootEntry();
-    }
-    // Otherwise, if the last entry is a left subtree of some node, then this leaf is the subtree that will
-    // need to be extended.
-    if (lastEntryIsLeftSubtree()) {
-      return path_.back().node;
-    }
-    // Otherwise, the last entry is the rightmost subtree (at level K) of some node, which means that the tree
-    // that will need to be extended is that parent node.
-    return path_[path_.size() - 2].node;
-  }
-
   void CompressedPath::switchToImmediateParent() noexcept {
     // Special case: switching to the immediate parent of the root node.
     if (path_.empty()) {
@@ -542,10 +544,9 @@ namespace Detail_NS
   constexpr std::size_t CompressedPath::maxPathLength(std::size_t bucket_capacity) noexcept {
     // Let f(N) be the height of the full tree representing N buckets, i.e.
     // the maximum length of the path from the root (inclusive) to a leaf (inclusive):
-    // f(0) = 0    f(4) = 3    f(8) = 4     f(12) = 5    f(16) = 5
-    // f(1) = 1    f(5) = 4    f(9) = 5     f(13) = 5    f(17) = 6
-    // f(2) = 2    f(6) = 4    f(10) = 5    f(14) = 5    ...
-    // f(3) = 3    f(7) = 4    f(11) = 5    f(15) = 5
+    // f(0) = 0
+    // f(1) = 1
+    // ...
     // f(2N) = 1 + f(N)
     // f(2N+1) = 1 + f(N+1)
     // I.e. f(N) = 1 + ceil(log2(N)) for N >= 1.

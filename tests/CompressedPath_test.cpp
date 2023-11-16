@@ -276,7 +276,7 @@ TEST(CompressedPath, FindTreeToExtendAfterPushBack) {
       // Traversing the tree this way must lead to some subtree (possibly a leaf) at full capacity.
       EXPECT_EQ(tree.numBuckets(), tree.bucketCapacity());
       // CompressedPath::findTreeToExtendAfterPushBack() must return the same subtree.
-      const PathEntry actual = path.findTreeToExtendAfterPushBack();
+      const PathEntry actual = findTreeToExtendAfterPushBack(path);
       EXPECT_EQ(path.rootLevel() + actual.rootOffset(), tree.root());
       EXPECT_EQ(actual.bucketFirst(), tree.bucketFirst());
       EXPECT_EQ(actual.numBuckets(), tree.numBuckets());

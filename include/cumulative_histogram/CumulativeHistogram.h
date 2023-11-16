@@ -751,7 +751,7 @@ void CumulativeHistogram<T>::push_back(const T& value) {
   // no nodes will be added because a tree representing a single bucket has 0 nodes.
   if (!empty()) {
     // Determine which node will need to be constructed after adding a new bucket.
-    const Detail_NS::PathEntry subtree_to_extend = path_to_last_bucket_.findTreeToExtendAfterPushBack();
+    const Detail_NS::PathEntry subtree_to_extend = Detail_NS::findTreeToExtendAfterPushBack(path_to_last_bucket_);
     const std::size_t subtree_root_idx = path_to_last_bucket_.rootLevel() + subtree_to_extend.rootOffset();
     T* subtree_root = nodes_.get() + subtree_root_idx;
     T* new_node = subtree_root - 1;
