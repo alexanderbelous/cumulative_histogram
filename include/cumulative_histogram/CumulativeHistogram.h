@@ -17,7 +17,8 @@
 #include <utility>
 #include <vector>
 
-namespace CumulativeHistogram_NS {
+namespace CumulativeHistogram_NS
+{
 
 // Defines a named requirement for an additive type.
 //
@@ -67,8 +68,9 @@ concept Additive =
 //       e.g., uint16_t may be sufficient for elements, but not for their total sum.
 //       With floating-point elements, it's not uncommon to compute the sum at double precision.
 template<Additive T>
-class CumulativeHistogram {
- public:
+class CumulativeHistogram
+{
+public:
   // CumulativeHistogram splits the elements into buckets and builds an auxiliary binary tree for them
   // (the buckets are the leaves of the tree).
   // The asymptotic time complexities of the operations do not depend on the size of the bucket, but their
@@ -276,7 +278,7 @@ class CumulativeHistogram {
   template<class Compare>
   std::pair<const_iterator, T> upperBound(const T& value, Compare cmp) const;
 
- private:
+private:
   // Returns an immutable FullTreeView for the currently effective tree.
   constexpr Detail_NS::FullTreeView<const T> getFullTreeView() const noexcept;
 
@@ -294,7 +296,6 @@ class CumulativeHistogram {
   // calling push_back() at full capacity (to avoid rebuilding the tree), but std::vector doesn't
   // guarantee that it doubles the capacity.
   size_type capacity_ = 0;
-
   // Path from the root of the currently effective tree to the leaf node that represents the last active bucket.
   // This path can be easily constructed by traversing the tree, but storing it in CumulativeHistogram has a benefit:
   // it allows to quickly (in O(1)) find the tree that needs to be extended after push_back(), and updating the path
@@ -308,7 +309,8 @@ class CumulativeHistogram {
 // Time complexity: O(1).
 template<class T>
 void swap(CumulativeHistogram<T>& lhs, CumulativeHistogram<T>& rhs)
-noexcept(std::is_nothrow_swappable_v<std::vector<T>&>) {
+  noexcept(std::is_nothrow_swappable_v<std::vector<T>&>)
+{
   lhs.swap(rhs);
 }
 
@@ -364,15 +366,18 @@ noexcept(std::is_nothrow_swappable_v<std::vector<T>&>) {
 // operations is actually O(logN), and not O(logNmax), where N is the number of elements and
 // Nmax is capacity.
 
-namespace Detail_NS {
+namespace Detail_NS
+{
   // Computes the new capacity for a full tree that currently stores the specified number of elements.
   // \param capacity - capacity of the current tree.
   // \return the smallest capacity M of the new tree, such that
   //   M >= 2*capacity and the current tree is a subtree of the new tree.
   // Time complexity: O(1).
-  constexpr std::size_t computeNewCapacityForFullTree(std::size_t capacity) noexcept {
+  constexpr std::size_t computeNewCapacityForFullTree(std::size_t capacity) noexcept
+  {
     // Special case: if the tree is currently empty, then the new capacity is simply 2.
-    if (capacity == 0) {
+    if (capacity == 0)
+    {
       return 2;
     }
     // Otherwise, there's at least 1 bucket already, so we should increase the number of buckets
@@ -406,11 +411,14 @@ namespace Detail_NS {
   // \returns the total sum of elements from `elements`.
   // Time complexity: O(logN), where N = elements.size().
   template<class T>
-  constexpr T sumElementsOfFullTree(std::span<const T> elements, FullTreeView<const T> tree, std::size_t bucket_size) {
+  constexpr T sumElementsOfFullTree(std::span<const T> elements, FullTreeView<const T> tree,
+                                    std::size_t bucket_size)
+  {
     assert(!elements.empty());
     assert(elements.size() == tree.numBuckets() * bucket_size);
     T result{};
-    while (!tree.empty()) {
+    while (!tree.empty())
+    {
       result += tree.root();
       tree.switchToRightChild();
     }
@@ -428,14 +436,17 @@ namespace Detail_NS {
   // Time complexity: O(M), where M is the number of elements from `elements` represented by `tree`
   //                  (M <= elements.size()).
   template<class T>
-  T buildBucketizedTree(std::span<const T> elements, const FullTreeView<T>& tree, std::size_t bucket_size) {
+  T buildBucketizedTree(std::span<const T> elements, const FullTreeView<T>& tree, std::size_t bucket_size)
+  {
     // Total number of active buckets.
     const std::size_t num_buckets = countBuckets(elements.size(), bucket_size);
     FullTreeView<T> t = tree;
     T total_sum{};
-    while (!t.empty()) {
+    while (!t.empty())
+    {
       // Just switch to the left subtree if the root is inactive.
-      if (num_buckets <= t.pivot()) {
+      if (num_buckets <= t.pivot())
+      {
         t.switchToLeftChild();
         continue;
       }
@@ -455,7 +466,8 @@ namespace Detail_NS {
 }  // namespace Detail_NS
 
 template<Additive T>
-constexpr Detail_NS::FullTreeView<const T> CumulativeHistogram<T>::getFullTreeView() const noexcept {
+constexpr Detail_NS::FullTreeView<const T> CumulativeHistogram<T>::getFullTreeView() const noexcept
+{
   const std::size_t root_level = path_to_last_bucket_.rootLevel();
   const std::size_t bucket_capacity = path_to_last_bucket_.bucketCapacity();
   const std::size_t num_buckets_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
@@ -463,7 +475,8 @@ constexpr Detail_NS::FullTreeView<const T> CumulativeHistogram<T>::getFullTreeVi
 }
 
 template<Additive T>
-constexpr Detail_NS::FullTreeView<T> CumulativeHistogram<T>::getMutableFullTreeView() noexcept {
+constexpr Detail_NS::FullTreeView<T> CumulativeHistogram<T>::getMutableFullTreeView() noexcept
+{
   const std::size_t root_level = path_to_last_bucket_.rootLevel();
   const std::size_t bucket_capacity = path_to_last_bucket_.bucketCapacity();
   const std::size_t num_buckets_at_level = Detail_NS::countElementsInLeftmostSubtree(bucket_capacity, root_level);
@@ -481,13 +494,13 @@ constexpr CumulativeHistogram<T>::CumulativeHistogram(CumulativeHistogram&& othe
   nodes_(std::move(other.nodes_)),
   capacity_(std::exchange(other.capacity_, static_cast<size_type>(0))),
   path_to_last_bucket_(std::move(other.path_to_last_bucket_))
-{
-}
+{}
 
 template<Additive T>
 constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(const CumulativeHistogram& other)
 {
-  if (capacity_ < other.size()) {
+  if (capacity_ < other.size())
+  {
     // Delegate to copy constructor and move assignment operator.
     return *this = CumulativeHistogram(other);
   }
@@ -502,7 +515,8 @@ constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(const Cumula
   // Get the full view of the currently effective tree.
   const Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
   // Update the active nodes of the currently effective tree.
-  if (!tree.empty()) {
+  if (!tree.empty())
+  {
     Detail_NS::buildBucketizedTree<T>(elements_, tree, BucketSize);
   }
   return *this;
@@ -528,7 +542,8 @@ CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
 {
   const size_type num_buckets = Detail_NS::countBuckets(num_elements, BucketSize);
   const size_type num_nodes = Detail_NS::countNodesInBucketizedTree(num_buckets);
-  if (num_nodes != 0) {
+  if (num_nodes != 0)
+  {
     // Allocate and zero-initialize the nodes.
     nodes_ = std::make_unique<T[]>(num_nodes);
   }
@@ -538,8 +553,7 @@ CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
 template<Additive T>
 CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements, const T& value):
   CumulativeHistogram(std::vector<T>(num_elements, value))
-{
-}
+{}
 
 template<Additive T>
 CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
@@ -551,7 +565,8 @@ CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
   path_to_last_bucket_.build(num_buckets, num_buckets);
   // TODO: only construct nodes that are needed to represent the current level.
   const size_type num_nodes = Detail_NS::countNodesInBucketizedTree(num_buckets);
-  if (num_nodes != 0) {
+  if (num_nodes != 0)
+  {
     // Allocate and default-initialize the nodes - there's no need to zero-initialize them.
     nodes_ = std::make_unique_for_overwrite<T[]>(num_nodes);
     const Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
@@ -563,55 +578,61 @@ template<Additive T>
 template<std::input_iterator Iter>
 CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last):
   CumulativeHistogram(std::vector<T>(first, last))
-{
-}
+{}
 
 template<Additive T>
 constexpr
-typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::begin() const noexcept {
+typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::begin() const noexcept
+{
   return elements_.begin();
 }
 
 template<Additive T>
 constexpr
-typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::end() const noexcept {
+typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::end() const noexcept
+{
   return elements_.end();
 }
 
 template<Additive T>
 constexpr
-typename CumulativeHistogram<T>::const_reverse_iterator CumulativeHistogram<T>::rbegin() const noexcept {
+typename CumulativeHistogram<T>::const_reverse_iterator CumulativeHistogram<T>::rbegin() const noexcept
+{
   return elements_.rbegin();
 }
 
 template<Additive T>
 constexpr
-typename CumulativeHistogram<T>::const_reverse_iterator CumulativeHistogram<T>::rend() const noexcept {
+typename CumulativeHistogram<T>::const_reverse_iterator CumulativeHistogram<T>::rend() const noexcept
+{
   return elements_.rend();
 }
 
 template<Additive T>
-constexpr bool CumulativeHistogram<T>::empty() const noexcept {
+constexpr bool CumulativeHistogram<T>::empty() const noexcept
+{
   return elements_.empty();
 }
 
 template<Additive T>
 constexpr
-typename CumulativeHistogram<T>::size_type
-CumulativeHistogram<T>::size() const noexcept {
+typename CumulativeHistogram<T>::size_type CumulativeHistogram<T>::size() const noexcept
+{
   return elements_.size();
 }
 
 template<Additive T>
 constexpr
-typename CumulativeHistogram<T>::size_type
-CumulativeHistogram<T>::capacity() const noexcept {
+typename CumulativeHistogram<T>::size_type CumulativeHistogram<T>::capacity() const noexcept
+{
   return capacity_;
 }
 
 template<Additive T>
-void CumulativeHistogram<T>::reserve(size_type num_elements) {
-  if (num_elements <= capacity()) {
+void CumulativeHistogram<T>::reserve(size_type num_elements)
+{
+  if (num_elements <= capacity())
+  {
     return;
   }
 
@@ -626,7 +647,8 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
   const std::size_t num_nodes_new = Detail_NS::countNodesInBucketizedTree(bucket_capacity_new);
 
   // Special case - if the new tree has 0 nodes, then that means that the original tree also has 0 nodes.
-  if (num_nodes_new == 0) {
+  if (num_nodes_new == 0)
+  {
     elements_.reserve(num_elements);
     capacity_ = num_elements;
     path_to_last_bucket_.reserve(bucket_capacity_new);
@@ -643,18 +665,22 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
   const std::size_t level_for_the_original =
     Detail_NS::findLeftmostSubtreeWithExactCapacity(bucket_capacity, bucket_capacity_new);
   // Construct the new tree.
-  if (level_for_the_original == static_cast<std::size_t>(-1)) {
+  if (level_for_the_original == static_cast<std::size_t>(-1))
+  {
     // The old tree is not a subtree of the new tree, so we have to build the new one from scratch.
     // Construct a FullTreeView for the currently effective subtree of the new tree.
     const Detail_NS::FullTreeView<T> tree_new =
       Detail_NS::makeFullTreeView(elements_.size(), num_elements, BucketSize, new_nodes_span);
     // Initialize the active nodes of the new tree.
-    if (!tree_new.empty()) {
+    if (!tree_new.empty())
+    {
       Detail_NS::buildBucketizedTree<T>(elements_, tree_new, BucketSize);
     }
     // Reserve new data for elements.
     elements_.reserve(num_elements);
-  } else {
+  }
+  else
+  {
     // Just copy the current tree as a subtree of the new one.
     const size_type num_nodes_old = Detail_NS::countNodesInBucketizedTree(bucket_capacity);
     const std::span<T> effective_nodes_old { nodes_.get() + root_idx_old, num_nodes_old };
@@ -665,13 +691,16 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
     // TODO: replace the condition with std::std::is_nothrow_constructible_v after implementing
     // lifetimes for nodes. Note that in this case you won't be able to simply copy all num_nodes_old -
     // some of them may not have started their lifetime yet.
-    if constexpr (std::is_nothrow_move_assignable_v<T>) {
+    if constexpr (std::is_nothrow_move_assignable_v<T>)
+    {
       // Memory is reserved before we move the nodes to ensure strong exception guarantee:
       // std::vector::reserve() may throw an exception, but std::copy_n() cannot.
       elements_.reserve(num_elements);
       std::copy_n(std::make_move_iterator(effective_nodes_old.begin()), effective_nodes_old.size(),
                   effective_nodes_new.begin());
-    } else {
+    }
+    else
+    {
       std::copy_n(effective_nodes_old.cbegin(), effective_nodes_old.size(),
                   effective_nodes_new.begin());
       // To ensure strong exception guarantee, std::vector::reserve() must be called after (potentitally
@@ -686,14 +715,16 @@ void CumulativeHistogram<T>::reserve(size_type num_elements) {
 }
 
 template<Additive T>
-void CumulativeHistogram<T>::clear() noexcept {
+void CumulativeHistogram<T>::clear() noexcept
+{
   elements_.clear();
   path_to_last_bucket_.clear();
   // TODO: destroy the nodes.
 }
 
 template<Additive T>
-void CumulativeHistogram<T>::setZero() {
+void CumulativeHistogram<T>::setZero()
+{
   const T zero {};
   std::fill(elements_.begin(), elements_.end(), zero);
   // Full view of the currently effective tree.
@@ -705,35 +736,42 @@ void CumulativeHistogram<T>::setZero() {
 }
 
 template<Additive T>
-void CumulativeHistogram<T>::fill(const T& value) {
+void CumulativeHistogram<T>::fill(const T& value)
+{
   std::fill(elements_.begin(), elements_.end(), value);
   const Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
   // This can be optimized for types for which multiplication is defined and `x+x+x...+x == x*N`.
   // However, the time complexity will still be O(N), so whatever.
-  if (!tree.empty()) {
+  if (!tree.empty())
+  {
     Detail_NS::buildBucketizedTree<T>(elements_, tree, BucketSize);
   }
 }
 
 template<Additive T>
-void CumulativeHistogram<T>::push_back() {
+void CumulativeHistogram<T>::push_back()
+{
   push_back(T{});
 }
 
 template<Additive T>
-void CumulativeHistogram<T>::push_back(const T& value) {
+void CumulativeHistogram<T>::push_back(const T& value)
+{
   // Double the capacity if needed.
-  if (size() == capacity()) {
+  if (size() == capacity())
+  {
     reserve(Detail_NS::computeNewCapacityForFullTree(capacity()));
   }
   // Check if adding an element will increase the number of buckets.
-  if (size() % BucketSize != 0) {
+  if (size() % BucketSize != 0)
+  {
     elements_.push_back(value);
     return;
   }
   // If we are adding the first bucket (i.e. the histogram was empty before this call), then
   // no nodes will be added because a tree representing a single bucket has 0 nodes.
-  if (!empty()) {
+  if (!empty())
+  {
     // Determine which node will need to be constructed after adding a new bucket.
     const Detail_NS::PathEntry subtree_to_extend = Detail_NS::findTreeToExtendAfterPushBack(path_to_last_bucket_);
     const std::size_t subtree_root_idx = path_to_last_bucket_.rootLevel() + subtree_to_extend.rootOffset();
@@ -752,8 +790,10 @@ void CumulativeHistogram<T>::push_back(const T& value) {
 }
 
 template<Additive T>
-void CumulativeHistogram<T>::pop_back() {
-  if (empty()) {
+void CumulativeHistogram<T>::pop_back()
+{
+  if (empty())
+  {
     throw std::logic_error("CumulativeHistogram::pop_back(): there are no elements left to remove.");
   }
   // TODO: find the deepest rightmost subtree. If we are removing the only element from that subtree,
@@ -762,19 +802,23 @@ void CumulativeHistogram<T>::pop_back() {
   elements_.pop_back();
   // Update the path to the last bucket if the number of buckets has changed.
   // The number of buckets changes only if there was K*BucketSize+1 elements before pop_back().
-  if (size() % BucketSize == 0) {
+  if (size() % BucketSize == 0)
+  {
     path_to_last_bucket_.popBack();
   }
 }
 
 template<Additive T>
-void CumulativeHistogram<T>::resize(size_type num_elements) {
+void CumulativeHistogram<T>::resize(size_type num_elements)
+{
   // Do nothing if N == N'
-  if (size() == num_elements) {
+  if (size() == num_elements)
+  {
     return;
   }
   // Remove the last N-N' elements if N > N'.
-  if (size() > num_elements) {
+  if (size() > num_elements)
+  {
     // Lol, yes it works.
     // TODO: destoy the nodes that are no longer needed. Currenlty this is not needed because
     // we don't construct/destroy nodes manually.
@@ -792,14 +836,16 @@ void CumulativeHistogram<T>::resize(size_type num_elements) {
   // TODO: I think a more efficient implementation is possible: basically buildTree(), which only
   // updates new nodes.
   const size_type elements_to_add = num_elements - size();
-  for (size_type i = 0; i < elements_to_add; ++i) {
+  for (size_type i = 0; i < elements_to_add; ++i)
+  {
     push_back(T{});
   }
 }
 
 template<Additive T>
 void CumulativeHistogram<T>::swap(CumulativeHistogram& other)
-noexcept(std::is_nothrow_swappable_v<std::vector<T>&>) {
+noexcept(std::is_nothrow_swappable_v<std::vector<T>&>)
+{
   elements_.swap(other.elements_);
   std::swap(nodes_, other.nodes_);
   std::swap(capacity_, other.capacity_);
@@ -807,40 +853,49 @@ noexcept(std::is_nothrow_swappable_v<std::vector<T>&>) {
 }
 
 template<Additive T>
-constexpr const std::vector<T>& CumulativeHistogram<T>::elements() const noexcept {
+constexpr const std::vector<T>& CumulativeHistogram<T>::elements() const noexcept
+{
   return elements_;
 }
 
 template<Additive T>
 typename CumulativeHistogram<T>::const_reference
-CumulativeHistogram<T>::element(size_type k) const {
+CumulativeHistogram<T>::element(size_type k) const
+{
   return elements_.at(k);
 }
 
 template<Additive T>
-void CumulativeHistogram<T>::increment(size_type k, const T& value) {
-  if (k >= size()) {
+void CumulativeHistogram<T>::increment(size_type k, const T& value)
+{
+  if (k >= size())
+  {
     throw std::out_of_range("CumulativeHistogram::increment(): k is out of range.");
   }
   const size_type k_plus_one = k + 1;
   // Full view of the currently effective tree.
   Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
-  while (!tree.empty()) {
+  while (!tree.empty())
+  {
     // The root of the tree stores the sum of all elements [first; middle).
     const std::size_t middle = tree.pivot() * BucketSize;
-    if (k_plus_one > middle) {
+    if (k_plus_one > middle)
+    {
       tree.switchToRightChild();
     }
-    else {
+    else
+    {
       // The root stores the sum of all elements in the left subtree, i.e. [first; middle),
       // so we should increment it if the root node is active - which is only if the right subtree
       // is not empty. The elements represented by the right subtree are [middle; size()), i.e.
       // it's not empty if and only if middle < size().
-      if (middle < size()) {
+      if (middle < size())
+      {
         tree.root() += value;
       }
       // Break if k == middle-1: this implies that no other node contains elements_[k] as a term.
-      if (k_plus_one == middle) {
+      if (k_plus_one == middle)
+      {
         break;
       }
       tree.switchToLeftChild();
@@ -851,27 +906,34 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value) {
 }
 
 template<Additive T>
-T CumulativeHistogram<T>::prefixSum(size_type k) const {
-  if (k >= size()) {
+T CumulativeHistogram<T>::prefixSum(size_type k) const
+{
+  if (k >= size())
+  {
     throw std::out_of_range("CumulativeHistogram::prefixSum(): k is out of range.");
   }
   const size_type k_plus_one = k + 1;
   // Special case for the total sum
-  if (k_plus_one == size()) {
+  if (k_plus_one == size())
+  {
     return totalSum();
   }
   T result {};
   // Full view of the currently effective tree.
   Detail_NS::FullTreeView<const T> tree = getFullTreeView();
-  while (!tree.empty()) {
+  while (!tree.empty())
+  {
     // The root of the tree stores the sum of all elements [first; middle).
     const std::size_t middle = tree.pivot() * BucketSize;
-    if (k_plus_one < middle) {
+    if (k_plus_one < middle)
+    {
       tree.switchToLeftChild();
     }
-    else {
+    else
+    {
       result += tree.root();
-      if (k_plus_one == middle) {
+      if (k_plus_one == middle)
+      {
         return result;
       }
       tree.switchToRightChild();
@@ -883,24 +945,29 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const {
 }
 
 template<Additive T>
-T CumulativeHistogram<T>::totalSum() const {
-  if (empty()) {
+T CumulativeHistogram<T>::totalSum() const
+{
+  if (empty())
+  {
     throw std::logic_error("CumulativeHistogram::totalSum(): the histogram is empty.");
   }
   const std::size_t num_buckets = path_to_last_bucket_.numBuckets();
   T result {};
   // Full view of the currently effective tree.
   Detail_NS::FullTreeView<const T> tree = getFullTreeView();
-  while (!tree.empty()) {
+  while (!tree.empty())
+  {
     // The tree represents buckets [first; last).
     // Its left subtree represents buckets [first; middle), and the right subtree represents [middle; last).
     // The root of the tree stores the sum of all elements from the buckets of the left subtree.
     // However, the root is only active if the right subtree is not empty.
     // The right subtree is empty if all elements are in the left subtree, i.e. if num_buckets <= middle.
-    if (num_buckets <= tree.pivot()) {
+    if (num_buckets <= tree.pivot())
+    {
       tree.switchToLeftChild();
     }
-    else {
+    else
+    {
       result += tree.root();
       tree.switchToRightChild();
     }
@@ -912,16 +979,19 @@ T CumulativeHistogram<T>::totalSum() const {
 
 template<Additive T>
 std::pair<typename CumulativeHistogram<T>::const_iterator, T>
-CumulativeHistogram<T>::lowerBound(const T& value) const {
+CumulativeHistogram<T>::lowerBound(const T& value) const
+{
   return lowerBound(value, std::less<T>{});
 }
 
 template<Additive T>
 template<class Compare>
 std::pair<typename CumulativeHistogram<T>::const_iterator, T>
-CumulativeHistogram<T>::lowerBound(const T& value, Compare cmp) const {
+CumulativeHistogram<T>::lowerBound(const T& value, Compare cmp) const
+{
   // Terminate if there are no elements.
-  if (empty()) {
+  if (empty())
+  {
     return { end(), T{} };
   }
   T prefix_sum_before_lower {};
@@ -929,21 +999,26 @@ CumulativeHistogram<T>::lowerBound(const T& value, Compare cmp) const {
   // Full view of the currently effective tree, representing the elements [k_lower; k_upper] = [0; N-1].
   Detail_NS::FullTreeView<const T> tree = getFullTreeView();
   const std::size_t num_buckets = path_to_last_bucket_.numBuckets();
-  while (!tree.empty()) {
+  while (!tree.empty())
+  {
     // If the right subtree is empty, just switch to the left subtree.
-    if (num_buckets <= tree.pivot()) {
+    if (num_buckets <= tree.pivot())
+    {
       tree.switchToLeftChild();
       continue;
     }
     // The root of the tree stores the sum of all elements [k_lower; middle].
     // Sum of elements [0; middle]
     T prefix_sum_middle = prefix_sum_before_lower + tree.root();
-    if (cmp(prefix_sum_middle, value)) {
+    if (cmp(prefix_sum_middle, value))
+    {
       // OK, we don't need to check the left tree, because prefixSum(i) < value for i in [0; middle].
       // k_lower = middle + 1;
       prefix_sum_before_lower = std::move(prefix_sum_middle);
       tree.switchToRightChild();
-    } else {
+    }
+    else
+    {
       // No need to check the right tree because prefixSum(i) >= value for i in [middle; N).
       // Note that it's still possible that middle is the element we're looking for.
       // k_upper = middle;
@@ -955,16 +1030,18 @@ CumulativeHistogram<T>::lowerBound(const T& value, Compare cmp) const {
   const std::size_t k_lower = tree.bucketFirst() * BucketSize;
   // If k_upper_theoretical < size(), then cmp(prefixSum(i), value) == false for all i >= k_upper_theoretical
   // and prefix_sum_upper = prefixSum(k_upper_theoretical).
-  // Otherwise, it means that we haven't yet encountered any i such that cmp(prefixSum(i), value) == false, and
-  // prefix_sum_upper remains value-initialized.
+  // Otherwise, it means that we haven't yet encountered any i such that cmp(prefixSum(i), value) == false,
+  // and prefix_sum_upper remains value-initialized.
   const std::size_t k_upper_theoretical = k_lower + BucketSize;
   const std::size_t k_upper = std::min(k_upper_theoretical, size());
   T prefix_sum = std::move(prefix_sum_before_lower);
   const_iterator iter = begin() + k_lower;
   const const_iterator iter_upper = begin() + k_upper;
-  for (; iter != iter_upper; ++iter) {
+  for (; iter != iter_upper; ++iter)
+  {
     prefix_sum += *iter;
-    if (!cmp(prefix_sum, value)) {
+    if (!cmp(prefix_sum, value))
+    {
       return { iter, std::move(prefix_sum) };
     }
   }
@@ -977,7 +1054,8 @@ CumulativeHistogram<T>::lowerBound(const T& value, Compare cmp) const {
 
 template<Additive T>
 std::pair<typename CumulativeHistogram<T>::const_iterator, T>
-CumulativeHistogram<T>::upperBound(const T& value) const {
+CumulativeHistogram<T>::upperBound(const T& value) const
+{
   // Effectively implements `lhs <= rhs`, but only requires operator< to be defined for T.
   auto less_equal = [](const T& lhs, const T& rhs) { return !(rhs < lhs); };
   return lowerBound(value, less_equal);
@@ -986,7 +1064,8 @@ CumulativeHistogram<T>::upperBound(const T& value) const {
 template<Additive T>
 template<class Compare>
 std::pair<typename CumulativeHistogram<T>::const_iterator, T>
-CumulativeHistogram<T>::upperBound(const T& value, Compare cmp) const {
+CumulativeHistogram<T>::upperBound(const T& value, Compare cmp) const
+{
   // Assuming that cmp(lhs, rhs) semantically means lhs < rhs, we can implement "less than or equal to"
   // comparison as !cmp(rhs, lhs).
   auto less_equal = [cmp](const T& lhs, const T& rhs) { return !cmp(rhs, lhs); };

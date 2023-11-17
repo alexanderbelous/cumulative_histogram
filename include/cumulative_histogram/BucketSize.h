@@ -1,9 +1,12 @@
 #pragma once
 
+#include <cstddef>
 #include <type_traits>
 
-namespace CumulativeHistogram_NS {
-namespace Detail_NS {
+namespace CumulativeHistogram_NS
+{
+namespace Detail_NS
+{
 
 // DefaultBucketSize provides the optimal bucket sizes for built-in arithmetic types. Users should not
 // provide specializations for this template - instead, they should define specializations for
@@ -47,5 +50,6 @@ class DefaultBucketSize<float> : public std::integral_constant<std::size_t, 64> 
 //     public std::integral_constant<std::size_t, 16> {};
 //
 template<class T, class Enable = void>
-class BucketSize : public ::CumulativeHistogram_NS::Detail_NS::DefaultBucketSize<T> {};
-}
+class BucketSize : public Detail_NS::DefaultBucketSize<T> {};
+
+}  // namespace CumulativeHistogram_NS
