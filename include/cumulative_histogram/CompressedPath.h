@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cumulative_histogram/CumulativeHistogramImpl.h>
 #include <cumulative_histogram/FullTreeView.h>
+#include <cumulative_histogram/Math.h>
 
 #include <cassert>
 #include <vector>

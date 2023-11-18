@@ -2,8 +2,8 @@
 
 #include <cumulative_histogram/BucketSize.h>
 #include <cumulative_histogram/CompressedPath.h>
-#include <cumulative_histogram/CumulativeHistogramImpl.h>
 #include <cumulative_histogram/FullTreeView.h>
+#include <cumulative_histogram/Math.h>
 
 #include <algorithm>
 #include <cassert>

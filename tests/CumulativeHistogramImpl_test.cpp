@@ -1,4 +1,4 @@
-#include <cumulative_histogram/CumulativeHistogramImpl.h>
+#include <cumulative_histogram/Math.h>
 
 #include <gtest/gtest.h>
 
