@@ -9,7 +9,7 @@ namespace CumulativeHistogram_NS {
 namespace Detail_NS {
 namespace {
 
-TEST(CumulativeHistogramImpl, floorLog2) {
+TEST(Math, floorLog2) {
   for (std::size_t i = 1; i <= 128; ++i) {
     EXPECT_EQ(floorLog2(i), static_cast<std::size_t>(std::floor(std::log2(static_cast<double>(i)))));
   }
@@ -20,7 +20,7 @@ TEST(CumulativeHistogramImpl, floorLog2) {
             std::numeric_limits<std::size_t>::digits - 1);
 }
 
-TEST(CumulativeHistogramImpl, ceilLog2) {
+TEST(Math, ceilLog2) {
   for (std::size_t i = 1; i <= 128; ++i) {
     EXPECT_EQ(ceilLog2(i), static_cast<std::size_t>(std::ceil(std::log2(static_cast<double>(i)))));
   }
@@ -31,7 +31,7 @@ TEST(CumulativeHistogramImpl, ceilLog2) {
     std::numeric_limits<std::size_t>::digits);
 }
 
-TEST(CumulativeHistogramImpl, countElementsInLeftmostSubtree) {
+TEST(Math, countElementsInLeftmostSubtree) {
   // Check all valid levels for N from [0; 1024]
   for (std::size_t num_elements = 0; num_elements <= 1024; ++num_elements) {
     std::size_t expected_num_elements_at_level = num_elements;
@@ -54,7 +54,7 @@ TEST(CumulativeHistogramImpl, countElementsInLeftmostSubtree) {
   EXPECT_EQ(countElementsInLeftmostSubtree(n_max, 2), (n_max / 4) + (n_max % 4 != 0));
 }
 
-TEST(CumulativeHistogramImpl, findDeepestNodeForElements) {
+TEST(Math, findDeepestNodeForElements) {
   // Slow (O(logN)) version for testing.
   const auto findDeepestNodeForElementsTest = [](std::size_t num_elements, std::size_t capacity) {
     std::size_t depth = 0;
