@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cassert>
 #include <concepts>
+#include <functional>
 #include <iterator>
 #include <memory>
 #include <numeric>
@@ -20,29 +21,23 @@
 namespace CumulativeHistogram_NS
 {
 
-// Defines a named requirement for an additive type.
-//
-// This is similar to an additive group in mathematics, except that this concept
-// doesn't require every element to have an inverse element (e.g., arbitrary-precision
-// unsigned integers satisfy this requirement, even though they don't have negative
-// counterparts).
-template<typename T>
-concept Additive =
-  // T should be a semiregular type
-  // (i.e. T must be both copyable and default constructible).
-  std::semiregular<T> &&
-  // Given an rvalue `lhs` of type `T&&` an lvalue `rhs` of type `const T&`,
-  // the expression `std::move(lhs) + rhs` must be convertible to `T`.
-  requires(T&& lhs, const T& rhs) { { std::move(lhs) + rhs } -> std::convertible_to<T>; };
-
 // Container for efficient computation of prefix sums for a dynamic array of elements.
 //
-// The template type parameter T must satisfy the `Additive` concept above. There are additional
-// requirements that cannot be expressed via C++ concepts:
-// 1) Addition must be commutative, i.e. `a + b == b + a` for any a and b.
-// 2) Addition must be associative, i.e. `(a + b) + c == a + (b + c)` for any a, b, c.
+// * T - the type of the elements - must be semiregular type, i.e T must be copyable and default
+//   constructible.
+// * SumOperation must be a function object type, which implements addition for T. Its signature must be
+//   equivalent to
+//       T sum(const T& lhs, const T& rhs);
+//
+// This is similar to an additive group in mathematics, except that CumulativeHistogram doesn't require every
+// element to have an inverse element (e.g., arbitrary-precision unsigned integers satisfy this requirement,
+// even though they don't have negative counterparts).
+//
+// There are additional requirements, which cannot be checked at compile time:
+// 1) Addition must be commutative, i.e. `sum(a, b) == sum(b, a)` for any a and b.
+// 2) Addition must be associative, i.e. `sum(sum(a, b), c) == sum(a, sum(b, c))` for any a, b, c.
 // 3) A default-constructed value-initialized object must have the same meaning as the identity element in
-//    additive groups (i.e. "zero"): `T{} + x == x` for any x.
+//    additive groups (i.e. "zero"): `sum(T{}, x) == x` for any x.
 //
 // * Built-in arithmetic types satisfy these requirements.
 //   * Note that signed integer overflow is undefined behavior.
@@ -56,20 +51,38 @@ concept Additive =
 // * User-defined classes for arbitrary-precision integers, N-dimensional vectors, quaternions, etc satisfy
 //   these requirements (as long as they overload operator+ and operator+=).
 // * std::string does NOT satisfy these requirements because string concatenation is not commutative.
-//
-// TODO: add a second parameter SumType, which defaults to T.
-//       In some scenarios it's reasonable to have different types for elements and sums:
-//       e.g., uint16_t may be sufficient for elements, but not for their total sum.
-//       With floating-point elements, it's not uncommon to compute the sum at double precision.
-template<Additive T>
+template<class T, class SumOperation = std::plus<>>
 class CumulativeHistogram
 {
 public:
+  // Check that T is a semiregular type.
+  static_assert(std::semiregular<T>, "T must be a semiregular type.");
+  // Check the signature of SumOperation.
+  static_assert(std::is_invocable_r_v<T, const SumOperation&, const T&, const T&>,
+    "SumOperation must be a callable that with the signature equivalent to "
+    "T sum_operation(const T& lhs, const T& rhs);");
+  // Check that SumOperation is an empty class.
+  //
+  // Currently, CumulativeHistogram forbids using stateful classes or function pointers as SumOperation.
+  // The reason is that it's unclear what should be done on assignment/swap - should the state of
+  // SumOperation also be updated?
+  // The answer is "it depends on the use case". One could come up with a SumOperation, which computes either
+  // the minimum or the maximum of the input values, depending on the state. In that case, given 2 objects
+  // histogramMin and histogramMax of type CumulativeHistogram<T, SumOperation> the following expression
+  // becomes ambiguous:
+  //     histogramMin = histogramMax;
+  // Do we simply want to copy the elements from histogramMax to histogramMin, or do we also want
+  // histogramMin to change its behavior, so that histogramMin.prefixSum(i) returns the maximum of elements
+  // [0; i] instead of the minimum of elements [0; i]?
+  // This problem is similar to stateful comparators in std::map and std::set and to stateful allocators in
+  // all STL containers. I don't want to deal with this right now, so let's just forbid stateful operations.
+  static_assert(std::is_empty_v<SumOperation>, "SumOperation must be an empty class.");
   // CumulativeHistogram splits the elements into buckets and builds an auxiliary binary tree for them
   // (the buckets are the leaves of the tree).
   // The asymptotic time complexities of the operations do not depend on the size of the bucket, but their
   // constant factors do.
   static constexpr std::size_t BucketSize = BucketSize<T>::value;
+  // Check that the number of elements per bucket is greater than or equal to 2.
   static_assert(BucketSize >= 2, "BucketSize should not be less than 2.");
 
   using value_type = T;
@@ -88,6 +101,10 @@ public:
   // Constructs an empty histogram.
   // Time complexity: O(1).
   constexpr CumulativeHistogram() noexcept = default;
+
+  // Constructs an empty histogram.
+  // Time complexity: O(1).
+  constexpr CumulativeHistogram(const SumOperation& sum_op) noexcept;
 
   // Copy constructor.
   // Note that this->capacity() == other.size() after construction.
@@ -123,24 +140,27 @@ public:
 
   // Constructs a cumulative histogram for N zero-initialized elements.
   // Time complexity: O(N).
-  explicit CumulativeHistogram(size_type num_elements);
+  explicit CumulativeHistogram(size_type num_elements, const SumOperation& sum_op = SumOperation());
 
   // Constructs a cumulative histogram for N elements, initializing them with the specified value.
   // Time complexity: O(N).
-  explicit CumulativeHistogram(size_type num_elements, const T& value);
+  explicit CumulativeHistogram(size_type num_elements, const T& value, const SumOperation& sum_op = SumOperation());
 
   // Constructs a cumulative histogram for the specified elements.
   // Note that this this->capacity() equals elements.size() after this call (not elements.capacity()).
   //
   // Time complexity: O(N).
-  explicit CumulativeHistogram(std::vector<T>&& elements);
+  explicit CumulativeHistogram(std::vector<T>&& elements, const SumOperation& sum_op = SumOperation());
 
   // Constructs a cumulative histogram for the specified elements.
   // This overload only participates in overload resolution if Iter satisfies
   // std::input_iterator concept, to avoid ambiguity with CumulativeHistogram(size_type, T).
   // Time complexity: O(N), where N is the distance between first and last.
   template<std::input_iterator Iter>
-  CumulativeHistogram(Iter first, Iter last);
+  CumulativeHistogram(Iter first, Iter last, const SumOperation& sum_op = SumOperation());
+
+  // Returns the function object that implements the sum operation for the type T.
+  constexpr SumOperation sumOperation() const noexcept(std::is_nothrow_copy_constructible_v<SumOperation>);
 
   // Returns an iterator to the first element.
   constexpr const_iterator begin() const noexcept;
@@ -297,6 +317,9 @@ private:
   // Without it, the time complexity of push_back() would've been O(logN) because we would have to traverse the tree
   // whenever a new node is added.
   Detail_NS::CompressedPath path_to_last_bucket_;
+  // Function object that implements addition for the type T.
+  // TODO: apply empty base optimization (SumOperation is currently required to be empty if it's an empty class).
+  SumOperation sum_op_;
 };
 
 // Swaps the contents of the given histograms.
@@ -397,10 +420,10 @@ namespace Detail_NS
     return capacity * 2;
   }
 
-  template<Additive T>
-  constexpr void addForAdditive(T& lhs, const T& rhs)
+  template<class T, class SumOperation>
+  constexpr void addForAdditive(T& lhs, const T& rhs, SumOperation sum_op)
   {
-    if constexpr (std::is_arithmetic_v<T>)
+    if constexpr (std::is_arithmetic_v<T> && std::is_same_v<SumOperation, std::plus<>>)
     {
       // It is known that all arithmetic types support operator+=.
       lhs += rhs;
@@ -408,7 +431,7 @@ namespace Detail_NS
     else
     {
       // Otherwise, use operator+(T&&, const T&), which is required by Additive concept.
-      lhs = std::move(lhs) + rhs;
+      lhs = sum_op(std::move(lhs), rhs);
     }
   }
 
@@ -419,21 +442,21 @@ namespace Detail_NS
   //   elements.empty() || elements.size() != tree.numBuckets() * bucket_size
   // \returns the total sum of elements from `elements`.
   // Time complexity: O(logN), where N = elements.size().
-  template<Additive T>
+  template<class T, class SumOperation>
   constexpr T sumElementsOfFullTree(std::span<const T> elements, FullTreeView<const T> tree,
-                                    std::size_t bucket_size)
+                                    std::size_t bucket_size, SumOperation sum_op)
   {
     assert(!elements.empty());
     assert(elements.size() == tree.numBuckets() * bucket_size);
     T result{};
     while (!tree.empty())
     {
-      addForAdditive(result, tree.root());
+      addForAdditive(result, tree.root(), sum_op);
       tree.switchToRightChild();
     }
     // Add elements from the last bucket.
     const std::span<const T> last_bucket = elements.last(bucket_size);
-    return std::accumulate(last_bucket.begin(), last_bucket.end(), std::move(result));
+    return std::accumulate(last_bucket.begin(), last_bucket.end(), std::move(result), sum_op);
   }
 
   // Initializes the active nodes of the given tree according to the elements.
@@ -444,8 +467,9 @@ namespace Detail_NS
   // \return the sum of all elements represented by `tree`.
   // Time complexity: O(M), where M is the number of elements from `elements` represented by `tree`
   //                  (M <= elements.size()).
-  template<Additive T>
-  T buildBucketizedTree(std::span<const T> elements, const FullTreeView<T>& tree, std::size_t bucket_size)
+  template<class T, class SumOperation>
+  T buildBucketizedTree(std::span<const T> elements, const FullTreeView<T>& tree,
+                        std::size_t bucket_size, SumOperation sum_op)
   {
     // Total number of active buckets.
     const std::size_t num_buckets = countBuckets(elements.size(), bucket_size);
@@ -459,8 +483,8 @@ namespace Detail_NS
         t.switchToLeftChild();
         continue;
       }
-      T total_sum_left = buildBucketizedTree(elements, t.leftChild(), bucket_size);
-      addForAdditive(total_sum, total_sum_left);
+      T total_sum_left = buildBucketizedTree(elements, t.leftChild(), bucket_size, sum_op);
+      addForAdditive(total_sum, total_sum_left, sum_op);
       t.root() = std::move(total_sum_left);
       t.switchToRightChild();
     }
@@ -469,13 +493,14 @@ namespace Detail_NS
     const std::size_t element_first = t.bucketFirst() * bucket_size;
     const std::size_t num_elements = std::min(elements.size() - element_first, bucket_size);
     const std::span<const T> elements_in_bucket = elements.subspan(element_first, num_elements);
-    return std::accumulate(elements_in_bucket.begin(), elements_in_bucket.end(), std::move(total_sum));
+    return std::accumulate(elements_in_bucket.begin(), elements_in_bucket.end(), std::move(total_sum), sum_op);
   }
 
 }  // namespace Detail_NS
 
-template<Additive T>
-constexpr Detail_NS::FullTreeView<const T> CumulativeHistogram<T>::getFullTreeView() const noexcept
+template<class T, class SumOperation>
+constexpr Detail_NS::FullTreeView<const T>
+CumulativeHistogram<T, SumOperation>::getFullTreeView() const noexcept
 {
   const std::size_t root_level = path_to_last_bucket_.rootLevel();
   const std::size_t bucket_capacity = path_to_last_bucket_.bucketCapacity();
@@ -483,8 +508,9 @@ constexpr Detail_NS::FullTreeView<const T> CumulativeHistogram<T>::getFullTreeVi
   return Detail_NS::FullTreeView<const T>{ nodes_.get() + root_level, num_buckets_at_level };
 }
 
-template<Additive T>
-constexpr Detail_NS::FullTreeView<T> CumulativeHistogram<T>::getMutableFullTreeView() noexcept
+template<class T, class SumOperation>
+constexpr Detail_NS::FullTreeView<T>
+CumulativeHistogram<T, SumOperation>::getMutableFullTreeView() noexcept
 {
   const std::size_t root_level = path_to_last_bucket_.rootLevel();
   const std::size_t bucket_capacity = path_to_last_bucket_.bucketCapacity();
@@ -492,21 +518,28 @@ constexpr Detail_NS::FullTreeView<T> CumulativeHistogram<T>::getMutableFullTreeV
   return Detail_NS::FullTreeView<T>{ nodes_.get() + root_level, num_buckets_at_level };
 }
 
-template<Additive T>
-constexpr CumulativeHistogram<T>::CumulativeHistogram(const CumulativeHistogram& other):
-  CumulativeHistogram(other.begin(), other.end())
+template<class T, class SumOperation>
+constexpr CumulativeHistogram<T, SumOperation>::CumulativeHistogram(const SumOperation& sum_op) noexcept :
+  sum_op_(sum_op)
 {}
 
-template<Additive T>
-constexpr CumulativeHistogram<T>::CumulativeHistogram(CumulativeHistogram&& other) noexcept :
+template<class T, class SumOperation>
+constexpr CumulativeHistogram<T, SumOperation>::CumulativeHistogram(const CumulativeHistogram& other):
+  CumulativeHistogram(other.begin(), other.end(), other.sum_op_)
+{}
+
+template<class T, class SumOperation>
+constexpr CumulativeHistogram<T, SumOperation>::CumulativeHistogram(CumulativeHistogram&& other) noexcept :
   elements_(std::move(other.elements_)),
   nodes_(std::move(other.nodes_)),
   capacity_(std::exchange(other.capacity_, static_cast<size_type>(0))),
-  path_to_last_bucket_(std::move(other.path_to_last_bucket_))
+  path_to_last_bucket_(std::move(other.path_to_last_bucket_)),
+  sum_op_(other.sum_op_)
 {}
 
-template<Additive T>
-constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(const CumulativeHistogram& other)
+template<class T, class SumOperation>
+constexpr CumulativeHistogram<T, SumOperation>&
+CumulativeHistogram<T, SumOperation>::operator=(const CumulativeHistogram& other)
 {
   if (capacity_ < other.size())
   {
@@ -526,13 +559,14 @@ constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(const Cumula
   // Update the active nodes of the currently effective tree.
   if (!tree.empty())
   {
-    Detail_NS::buildBucketizedTree<T>(elements_, tree, BucketSize);
+    Detail_NS::buildBucketizedTree<T>(elements_, tree, BucketSize, sum_op_);
   }
   return *this;
 }
 
-template<Additive T>
-constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(CumulativeHistogram&& other)
+template<class T, class SumOperation>
+constexpr CumulativeHistogram<T, SumOperation>&
+CumulativeHistogram<T, SumOperation>::operator=(CumulativeHistogram&& other)
   noexcept(std::is_nothrow_move_assignable_v<std::vector<T>>)
 {
   // This line might throw an exception.
@@ -544,10 +578,12 @@ constexpr CumulativeHistogram<T>& CumulativeHistogram<T>::operator=(CumulativeHi
   return *this;
 }
 
-template<Additive T>
-CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
+template<class T, class SumOperation>
+CumulativeHistogram<T, SumOperation>::CumulativeHistogram(size_type num_elements,
+                                                          const SumOperation& sum_op):
   elements_(num_elements),
-  capacity_(num_elements)
+  capacity_(num_elements),
+  sum_op_(sum_op)
 {
   const size_type num_buckets = Detail_NS::countBuckets(num_elements, BucketSize);
   const size_type num_nodes = Detail_NS::countNodesInBucketizedTree(num_buckets);
@@ -559,15 +595,18 @@ CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements):
   path_to_last_bucket_.build(num_buckets, num_buckets);
 }
 
-template<Additive T>
-CumulativeHistogram<T>::CumulativeHistogram(size_type num_elements, const T& value):
-  CumulativeHistogram(std::vector<T>(num_elements, value))
+template<class T, class SumOperation>
+CumulativeHistogram<T, SumOperation>::CumulativeHistogram(size_type num_elements, const T& value,
+                                                          const SumOperation& sum_op):
+  CumulativeHistogram(std::vector<T>(num_elements, value), sum_op)
 {}
 
-template<Additive T>
-CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
+template<class T, class SumOperation>
+CumulativeHistogram<T, SumOperation>::CumulativeHistogram(std::vector<T>&& elements,
+                                                          const SumOperation& sum_op):
   elements_(std::move(elements)),
-  capacity_(elements_.size())
+  capacity_(elements_.size()),
+  sum_op_(sum_op)
 {
   const size_type num_buckets = Detail_NS::countBuckets(capacity_, BucketSize);
   // Construct a path to the last bucket.
@@ -579,66 +618,67 @@ CumulativeHistogram<T>::CumulativeHistogram(std::vector<T>&& elements):
     // Allocate and default-initialize the nodes - there's no need to zero-initialize them.
     nodes_ = std::make_unique_for_overwrite<T[]>(num_nodes);
     const Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
-    Detail_NS::buildBucketizedTree<T>(elements_, tree, BucketSize);
+    Detail_NS::buildBucketizedTree<T>(elements_, tree, BucketSize, sum_op_);
   }
 }
 
-template<Additive T>
+template<class T, class SumOperation>
 template<std::input_iterator Iter>
-CumulativeHistogram<T>::CumulativeHistogram(Iter first, Iter last):
-  CumulativeHistogram(std::vector<T>(first, last))
+CumulativeHistogram<T, SumOperation>::CumulativeHistogram(Iter first, Iter last, const SumOperation& sum_op):
+  CumulativeHistogram(std::vector<T>(first, last), sum_op)
 {}
 
-template<Additive T>
-constexpr
-typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::begin() const noexcept
+template<class T, class SumOperation>
+constexpr SumOperation CumulativeHistogram<T, SumOperation>::sumOperation() const
+  noexcept(std::is_nothrow_copy_constructible_v<SumOperation>)
+{
+  return sum_op_;
+}
+
+template<class T, class SumOperation>
+constexpr auto CumulativeHistogram<T, SumOperation>::begin() const noexcept -> const_iterator
 {
   return elements_.begin();
 }
 
-template<Additive T>
-constexpr
-typename CumulativeHistogram<T>::const_iterator CumulativeHistogram<T>::end() const noexcept
+template<class T, class SumOperation>
+constexpr auto CumulativeHistogram<T, SumOperation>::end() const noexcept -> const_iterator
 {
   return elements_.end();
 }
 
-template<Additive T>
-constexpr
-typename CumulativeHistogram<T>::const_reverse_iterator CumulativeHistogram<T>::rbegin() const noexcept
+template<class T, class SumOperation>
+constexpr auto CumulativeHistogram<T, SumOperation>::rbegin() const noexcept -> const_reverse_iterator
 {
   return elements_.rbegin();
 }
 
-template<Additive T>
-constexpr
-typename CumulativeHistogram<T>::const_reverse_iterator CumulativeHistogram<T>::rend() const noexcept
+template<class T, class SumOperation>
+constexpr auto CumulativeHistogram<T, SumOperation>::rend() const noexcept -> const_reverse_iterator
 {
   return elements_.rend();
 }
 
-template<Additive T>
-constexpr bool CumulativeHistogram<T>::empty() const noexcept
+template<class T, class SumOperation>
+constexpr bool CumulativeHistogram<T, SumOperation>::empty() const noexcept
 {
   return elements_.empty();
 }
 
-template<Additive T>
-constexpr
-typename CumulativeHistogram<T>::size_type CumulativeHistogram<T>::size() const noexcept
+template<class T, class SumOperation>
+constexpr auto CumulativeHistogram<T, SumOperation>::size() const noexcept -> size_type
 {
   return elements_.size();
 }
 
-template<Additive T>
-constexpr
-typename CumulativeHistogram<T>::size_type CumulativeHistogram<T>::capacity() const noexcept
+template<class T, class SumOperation>
+constexpr auto CumulativeHistogram<T, SumOperation>::capacity() const noexcept -> size_type
 {
   return capacity_;
 }
 
-template<Additive T>
-void CumulativeHistogram<T>::reserve(size_type num_elements)
+template<class T, class SumOperation>
+void CumulativeHistogram<T, SumOperation>::reserve(size_type num_elements)
 {
   if (num_elements <= capacity())
   {
@@ -683,7 +723,7 @@ void CumulativeHistogram<T>::reserve(size_type num_elements)
     // Initialize the active nodes of the new tree.
     if (!tree_new.empty())
     {
-      Detail_NS::buildBucketizedTree<T>(elements_, tree_new, BucketSize);
+      Detail_NS::buildBucketizedTree<T>(elements_, tree_new, BucketSize, sum_op_);
     }
     // Reserve new data for elements.
     elements_.reserve(num_elements);
@@ -723,16 +763,16 @@ void CumulativeHistogram<T>::reserve(size_type num_elements)
   path_to_last_bucket_.reserve(bucket_capacity_new);
 }
 
-template<Additive T>
-void CumulativeHistogram<T>::clear() noexcept
+template<class T, class SumOperation>
+void CumulativeHistogram<T, SumOperation>::clear() noexcept
 {
   elements_.clear();
   path_to_last_bucket_.clear();
   // TODO: destroy the nodes.
 }
 
-template<Additive T>
-void CumulativeHistogram<T>::setZero()
+template<class T, class SumOperation>
+void CumulativeHistogram<T, SumOperation>::setZero()
 {
   const T zero {};
   std::fill(elements_.begin(), elements_.end(), zero);
@@ -744,8 +784,8 @@ void CumulativeHistogram<T>::setZero()
   std::fill(nodes.begin(), nodes.end(), zero);
 }
 
-template<Additive T>
-void CumulativeHistogram<T>::fill(const T& value)
+template<class T, class SumOperation>
+void CumulativeHistogram<T, SumOperation>::fill(const T& value)
 {
   std::fill(elements_.begin(), elements_.end(), value);
   const Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
@@ -753,18 +793,18 @@ void CumulativeHistogram<T>::fill(const T& value)
   // However, the time complexity will still be O(N), so whatever.
   if (!tree.empty())
   {
-    Detail_NS::buildBucketizedTree<T>(elements_, tree, BucketSize);
+    Detail_NS::buildBucketizedTree<T>(elements_, tree, BucketSize, sum_op_);
   }
 }
 
-template<Additive T>
-void CumulativeHistogram<T>::push_back()
+template<class T, class SumOperation>
+void CumulativeHistogram<T, SumOperation>::push_back()
 {
   push_back(T{});
 }
 
-template<Additive T>
-void CumulativeHistogram<T>::push_back(const T& value)
+template<class T, class SumOperation>
+void CumulativeHistogram<T, SumOperation>::push_back(const T& value)
 {
   // Double the capacity if needed.
   if (size() == capacity())
@@ -792,14 +832,14 @@ void CumulativeHistogram<T>::push_back(const T& value)
     const std::span<const T> subtree_elements = std::span<const T>(elements_).subspan(element_first);
     const Detail_NS::FullTreeView<const T> subtree(subtree_root, subtree_to_extend.numBuckets());
     // Construct the new node.
-    *new_node = Detail_NS::sumElementsOfFullTree<T>(subtree_elements, subtree, BucketSize);
+    *new_node = Detail_NS::sumElementsOfFullTree<T>(subtree_elements, subtree, BucketSize, sum_op_);
   }
   elements_.push_back(value);
   path_to_last_bucket_.pushBack();
 }
 
-template<Additive T>
-void CumulativeHistogram<T>::pop_back()
+template<class T, class SumOperation>
+void CumulativeHistogram<T, SumOperation>::pop_back()
 {
   if (empty())
   {
@@ -817,8 +857,8 @@ void CumulativeHistogram<T>::pop_back()
   }
 }
 
-template<Additive T>
-void CumulativeHistogram<T>::resize(size_type num_elements)
+template<class T, class SumOperation>
+void CumulativeHistogram<T, SumOperation>::resize(size_type num_elements)
 {
   // Do nothing if N == N'
   if (size() == num_elements)
@@ -851,8 +891,8 @@ void CumulativeHistogram<T>::resize(size_type num_elements)
   }
 }
 
-template<Additive T>
-void CumulativeHistogram<T>::swap(CumulativeHistogram& other)
+template<class T, class SumOperation>
+void CumulativeHistogram<T, SumOperation>::swap(CumulativeHistogram& other)
 noexcept(std::is_nothrow_swappable_v<std::vector<T>&>)
 {
   elements_.swap(other.elements_);
@@ -861,21 +901,20 @@ noexcept(std::is_nothrow_swappable_v<std::vector<T>&>)
   path_to_last_bucket_.swap(other.path_to_last_bucket_);
 }
 
-template<Additive T>
-constexpr const std::vector<T>& CumulativeHistogram<T>::elements() const noexcept
+template<class T, class SumOperation>
+constexpr const std::vector<T>& CumulativeHistogram<T, SumOperation>::elements() const noexcept
 {
   return elements_;
 }
 
-template<Additive T>
-typename CumulativeHistogram<T>::const_reference
-CumulativeHistogram<T>::element(size_type k) const
+template<class T, class SumOperation>
+auto CumulativeHistogram<T, SumOperation>::element(size_type k) const -> const_reference
 {
   return elements_.at(k);
 }
 
-template<Additive T>
-void CumulativeHistogram<T>::increment(size_type k, const T& value)
+template<class T, class SumOperation>
+void CumulativeHistogram<T, SumOperation>::increment(size_type k, const T& value)
 {
   if (k >= size())
   {
@@ -900,7 +939,7 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value)
       // it's not empty if and only if middle < size().
       if (middle < size())
       {
-        Detail_NS::addForAdditive(tree.root(), value);
+        Detail_NS::addForAdditive(tree.root(), value, sum_op_);
       }
       // Break if k == middle-1: this implies that no other node contains elements_[k] as a term.
       if (k_plus_one == middle)
@@ -911,11 +950,11 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value)
     }
   }
   // Update the element itself.
-  Detail_NS::addForAdditive(elements_[k], value);
+  Detail_NS::addForAdditive(elements_[k], value, sum_op_);
 }
 
-template<Additive T>
-T CumulativeHistogram<T>::prefixSum(size_type k) const
+template<class T, class SumOperation>
+T CumulativeHistogram<T, SumOperation>::prefixSum(size_type k) const
 {
   if (k >= size())
   {
@@ -940,7 +979,7 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const
     }
     else
     {
-      Detail_NS::addForAdditive(result, tree.root());
+      Detail_NS::addForAdditive(result, tree.root(), sum_op_);
       if (k_plus_one == middle)
       {
         return result;
@@ -950,11 +989,11 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const
   }
   // Add elements from the bucket.
   const size_type first = tree.bucketFirst() * BucketSize;
-  return std::accumulate(elements_.begin() + first, elements_.begin() + k_plus_one, std::move(result));
+  return std::accumulate(elements_.begin() + first, elements_.begin() + k_plus_one, std::move(result), sum_op_);
 }
 
-template<Additive T>
-T CumulativeHistogram<T>::totalSum() const
+template<class T, class SumOperation>
+T CumulativeHistogram<T, SumOperation>::totalSum() const
 {
   if (empty())
   {
@@ -977,26 +1016,24 @@ T CumulativeHistogram<T>::totalSum() const
     }
     else
     {
-      Detail_NS::addForAdditive(result, tree.root());
+      Detail_NS::addForAdditive(result, tree.root(), sum_op_);
       tree.switchToRightChild();
     }
   }
   // Add elements from the last bucket.
   const size_type first = tree.bucketFirst() * BucketSize;
-  return std::accumulate(elements_.begin() + first, elements_.end(), std::move(result));
+  return std::accumulate(elements_.begin() + first, elements_.end(), std::move(result), sum_op_);
 }
 
-template<Additive T>
-std::pair<typename CumulativeHistogram<T>::const_iterator, T>
-CumulativeHistogram<T>::lowerBound(const T& value) const
+template<class T, class SumOperation>
+auto CumulativeHistogram<T, SumOperation>::lowerBound(const T& value) const -> std::pair<const_iterator, T>
 {
   return lowerBound(value, std::less<T>{});
 }
 
-template<Additive T>
+template<class T, class SumOperation>
 template<class Compare>
-std::pair<typename CumulativeHistogram<T>::const_iterator, T>
-CumulativeHistogram<T>::lowerBound(const T& value, Compare cmp) const
+auto CumulativeHistogram<T, SumOperation>::lowerBound(const T& value, Compare cmp) const -> std::pair<const_iterator, T>
 {
   // Terminate if there are no elements.
   if (empty())
@@ -1018,8 +1055,7 @@ CumulativeHistogram<T>::lowerBound(const T& value, Compare cmp) const
     }
     // The root of the tree stores the sum of all elements [k_lower; middle].
     // Sum of elements [0; middle]
-    T prefix_sum_middle = prefix_sum_before_lower;
-    Detail_NS::addForAdditive(prefix_sum_middle, tree.root());
+    T prefix_sum_middle = sum_op_(std::as_const(prefix_sum_before_lower), tree.root());
     if (cmp(prefix_sum_middle, value))
     {
       // OK, we don't need to check the left tree, because prefixSum(i) < value for i in [0; middle].
@@ -1049,7 +1085,7 @@ CumulativeHistogram<T>::lowerBound(const T& value, Compare cmp) const
   const const_iterator iter_upper = begin() + k_upper;
   for (; iter != iter_upper; ++iter)
   {
-    Detail_NS::addForAdditive(prefix_sum, *iter);
+    Detail_NS::addForAdditive(prefix_sum, *iter, sum_op_);
     if (!cmp(prefix_sum, value))
     {
       return { iter, std::move(prefix_sum) };
@@ -1062,19 +1098,17 @@ CumulativeHistogram<T>::lowerBound(const T& value, Compare cmp) const
   return { iter, std::move(prefix_sum_upper) };
 }
 
-template<Additive T>
-std::pair<typename CumulativeHistogram<T>::const_iterator, T>
-CumulativeHistogram<T>::upperBound(const T& value) const
+template<class T, class SumOperation>
+auto CumulativeHistogram<T, SumOperation>::upperBound(const T& value) const -> std::pair<const_iterator, T>
 {
   // Effectively implements `lhs <= rhs`, but only requires operator< to be defined for T.
   auto less_equal = [](const T& lhs, const T& rhs) { return !(rhs < lhs); };
   return lowerBound(value, less_equal);
 }
 
-template<Additive T>
+template<class T, class SumOperation>
 template<class Compare>
-std::pair<typename CumulativeHistogram<T>::const_iterator, T>
-CumulativeHistogram<T>::upperBound(const T& value, Compare cmp) const
+auto CumulativeHistogram<T, SumOperation>::upperBound(const T& value, Compare cmp) const -> std::pair<const_iterator, T>
 {
   // Assuming that cmp(lhs, rhs) semantically means lhs < rhs, we can implement "less than or equal to"
   // comparison as !cmp(rhs, lhs).

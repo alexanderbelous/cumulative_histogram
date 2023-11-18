@@ -18,12 +18,13 @@ static_assert(BucketSize<unsigned int>::value == 2, "BucketSize<unsigned int > m
 
 namespace {
 
-template<class T>
-testing::AssertionResult CheckPrefixSums(const CumulativeHistogram<T>& histogram) {
+template<class T, class SumOperation>
+testing::AssertionResult CheckPrefixSums(const CumulativeHistogram<T, SumOperation>& histogram) {
+  const SumOperation sum_op = histogram.sumOperation();
   const std::span<const T> elements = histogram.elements();
   T expected {};
   for (std::size_t i = 0; i < elements.size(); ++i) {
-    expected = std::move(expected) + elements[i];
+    expected = sum_op(std::move(expected), elements[i]);
     const T actual = histogram.prefixSum(i);
     if (actual != expected) {
       return testing::AssertionFailure() <<
@@ -33,13 +34,14 @@ testing::AssertionResult CheckPrefixSums(const CumulativeHistogram<T>& histogram
   return testing::AssertionSuccess();
 }
 
-template<class T>
-testing::AssertionResult CheckLowerBound(const CumulativeHistogram<T>& histogram, const T& value) {
+template<class T, class SumOperation>
+testing::AssertionResult CheckLowerBound(const CumulativeHistogram<T, SumOperation>& histogram, const T& value) {
+  const SumOperation sum_op = histogram.sumOperation();
   // Find the lower bound safely in O(N).
   auto iter_expected = histogram.begin();
   T prefix_sum {};
   while (iter_expected != histogram.end()) {
-    prefix_sum = std::move(prefix_sum) + *iter_expected;
+    prefix_sum = sum_op(std::move(prefix_sum), *iter_expected);
     if (!(prefix_sum < value)) {
       break;
     }
@@ -58,13 +60,14 @@ testing::AssertionResult CheckLowerBound(const CumulativeHistogram<T>& histogram
   return testing::AssertionSuccess();
 }
 
-template<class T>
-testing::AssertionResult CheckUpperBound(const CumulativeHistogram<T>& histogram, const T& value) {
+template<class T, class SumOperation>
+testing::AssertionResult CheckUpperBound(const CumulativeHistogram<T, SumOperation>& histogram, const T& value) {
+  const SumOperation sum_op = histogram.sumOperation();
   // Find the upper bound safely in O(N).
   auto iter_expected = histogram.begin();
   T prefix_sum {};
   while (iter_expected != histogram.end()) {
-    prefix_sum = std::move(prefix_sum) + *iter_expected;
+    prefix_sum = sum_op(std::move(prefix_sum), *iter_expected);
     if (value < prefix_sum) {
       break;
     }
@@ -701,43 +704,56 @@ TEST(CumulativeHistogram, Complex) {
   }
 }
 
-// Minimal user-defined type that satisfies the Additive concept.
-struct CustomAdditiveType
+// User-defined type that satisfies the Semiregular concept.
+struct CustomType
 {
   unsigned int value;
 };
 
-constexpr CustomAdditiveType&& operator+(CustomAdditiveType&& lhs, const CustomAdditiveType& rhs) noexcept
-{
-  lhs.value += rhs.value;
-  return std::move(lhs);
-}
-
-static_assert(Additive<CustomAdditiveType>, "Must satisfy Additive concept.");
-
-// Inequality comparison operator for CustomAdditiveType.
-// This is not needed for the Additive concept, but we need it for tests.
-constexpr bool operator!=(const CustomAdditiveType& lhs, const CustomAdditiveType& rhs) noexcept
+// Inequality comparison operator for CustomType.
+// This is not needed for the CumulativeHistogram, but we need it for tests.
+constexpr bool operator!=(const CustomType& lhs, const CustomType& rhs) noexcept
 {
   return lhs.value != rhs.value;
 }
 
-// std::ostream support for CustomAdditiveType.
-// This is not needed for the Additive concept, but we need it for tests.
-std::ostream& operator<< (std::ostream& stream, const CustomAdditiveType& object)
+// std::ostream support for CustomType.
+// This is not needed for CumulativeHistogram, but we need it for tests.
+std::ostream& operator<< (std::ostream& stream, const CustomType& object)
 {
-  return stream << "CustromAdditiveType{ " << object.value << "}";
+  return stream << "CustomType{ " << object.value << "}";
 }
+
+class CustomSum
+{
+public:
+  // Not default-constructible.
+  constexpr explicit CustomSum(int _) noexcept {}
+
+  constexpr CustomType operator()(const CustomType& lhs, const CustomType& rhs) const noexcept
+  {
+    return CustomType{ lhs.value ^ rhs.value };
+  }
+};
 
 TEST(CumulativeHistogram, UserDefinedType)
 {
-  CumulativeHistogram<CustomAdditiveType> histogram;
+  CumulativeHistogram<CustomType, CustomSum> histogram(CustomSum(10));
   histogram.reserve(10);
-  histogram.resize(9);
-  histogram.increment(0, CustomAdditiveType{ 1 });
-  histogram.push_back(CustomAdditiveType{ 5 });
+  histogram.resize(2);
+  histogram.push_back(CustomType{ 5 });
+  histogram.push_back(CustomType{ 1 });
+  histogram.push_back(CustomType{ 6 });
+  histogram.push_back(CustomType{ 2 });
+  histogram.increment(0, CustomType{ 8 });  // element(0) := element(0) XOR 8;
   histogram.pop_back();
   EXPECT_TRUE(CheckPrefixSums(histogram));
+  CumulativeHistogram<CustomType, CustomSum> histogram2 = histogram;
+  EXPECT_TRUE(CheckPrefixSums(histogram2));
+  CumulativeHistogram<CustomType, CustomSum> histogram3 = std::move(histogram2);
+  EXPECT_TRUE(CheckPrefixSums(histogram3));
+  histogram3.clear();
+  histogram = histogram3;
 }
 
 }
