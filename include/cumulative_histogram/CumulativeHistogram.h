@@ -33,10 +33,7 @@ concept Additive =
   std::semiregular<T> &&
   // Given an rvalue `lhs` of type `T&&` an lvalue `rhs` of type `const T&`,
   // the expression `std::move(lhs) + rhs` must be convertible to `T`.
-  requires(T&& lhs, const T& rhs) { { std::move(lhs) + rhs } -> std::convertible_to<T>; } &&
-  // Given an lvalue `lhs` of type `T&` an lvalue `rhs` of type `const T&`,
-  // the expression `lhs += rhs` must be valid.
-  requires(T& lhs, const T& rhs) { lhs += rhs; };
+  requires(T&& lhs, const T& rhs) { { std::move(lhs) + rhs } -> std::convertible_to<T>; };
 
 // Container for efficient computation of prefix sums for a dynamic array of elements.
 //
@@ -400,6 +397,21 @@ namespace Detail_NS
     return capacity * 2;
   }
 
+  template<Additive T>
+  constexpr void addForAdditive(T& lhs, const T& rhs)
+  {
+    if constexpr (std::is_arithmetic_v<T>)
+    {
+      // It is known that all arithmetic types support operator+=.
+      lhs += rhs;
+    }
+    else
+    {
+      // Otherwise, use operator+(T&&, const T&), which is required by Additive concept.
+      lhs = std::move(lhs) + rhs;
+    }
+  }
+
   // Computes the total sum of elements of a tree which is at its full capacity.
   // \param elements - elements to sum.
   // \param tree - auxiliary tree for `elements`.
@@ -407,7 +419,7 @@ namespace Detail_NS
   //   elements.empty() || elements.size() != tree.numBuckets() * bucket_size
   // \returns the total sum of elements from `elements`.
   // Time complexity: O(logN), where N = elements.size().
-  template<class T>
+  template<Additive T>
   constexpr T sumElementsOfFullTree(std::span<const T> elements, FullTreeView<const T> tree,
                                     std::size_t bucket_size)
   {
@@ -416,7 +428,7 @@ namespace Detail_NS
     T result{};
     while (!tree.empty())
     {
-      result += tree.root();
+      addForAdditive(result, tree.root());
       tree.switchToRightChild();
     }
     // Add elements from the last bucket.
@@ -432,7 +444,7 @@ namespace Detail_NS
   // \return the sum of all elements represented by `tree`.
   // Time complexity: O(M), where M is the number of elements from `elements` represented by `tree`
   //                  (M <= elements.size()).
-  template<class T>
+  template<Additive T>
   T buildBucketizedTree(std::span<const T> elements, const FullTreeView<T>& tree, std::size_t bucket_size)
   {
     // Total number of active buckets.
@@ -448,7 +460,7 @@ namespace Detail_NS
         continue;
       }
       T total_sum_left = buildBucketizedTree(elements, t.leftChild(), bucket_size);
-      total_sum += std::as_const(total_sum_left);
+      addForAdditive(total_sum, total_sum_left);
       t.root() = std::move(total_sum_left);
       t.switchToRightChild();
     }
@@ -888,7 +900,7 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value)
       // it's not empty if and only if middle < size().
       if (middle < size())
       {
-        tree.root() += value;
+        Detail_NS::addForAdditive(tree.root(), value);
       }
       // Break if k == middle-1: this implies that no other node contains elements_[k] as a term.
       if (k_plus_one == middle)
@@ -899,7 +911,7 @@ void CumulativeHistogram<T>::increment(size_type k, const T& value)
     }
   }
   // Update the element itself.
-  elements_[k] += value;
+  Detail_NS::addForAdditive(elements_[k], value);
 }
 
 template<Additive T>
@@ -928,7 +940,7 @@ T CumulativeHistogram<T>::prefixSum(size_type k) const
     }
     else
     {
-      result += tree.root();
+      Detail_NS::addForAdditive(result, tree.root());
       if (k_plus_one == middle)
       {
         return result;
@@ -965,7 +977,7 @@ T CumulativeHistogram<T>::totalSum() const
     }
     else
     {
-      result += tree.root();
+      Detail_NS::addForAdditive(result, tree.root());
       tree.switchToRightChild();
     }
   }
@@ -1006,7 +1018,8 @@ CumulativeHistogram<T>::lowerBound(const T& value, Compare cmp) const
     }
     // The root of the tree stores the sum of all elements [k_lower; middle].
     // Sum of elements [0; middle]
-    T prefix_sum_middle = prefix_sum_before_lower + tree.root();
+    T prefix_sum_middle = prefix_sum_before_lower;
+    Detail_NS::addForAdditive(prefix_sum_middle, tree.root());
     if (cmp(prefix_sum_middle, value))
     {
       // OK, we don't need to check the left tree, because prefixSum(i) < value for i in [0; middle].
@@ -1036,7 +1049,7 @@ CumulativeHistogram<T>::lowerBound(const T& value, Compare cmp) const
   const const_iterator iter_upper = begin() + k_upper;
   for (; iter != iter_upper; ++iter)
   {
-    prefix_sum += *iter;
+    Detail_NS::addForAdditive(prefix_sum, *iter);
     if (!cmp(prefix_sum, value))
     {
       return { iter, std::move(prefix_sum) };

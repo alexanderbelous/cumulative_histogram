@@ -23,7 +23,7 @@ testing::AssertionResult CheckPrefixSums(const CumulativeHistogram<T>& histogram
   const std::span<const T> elements = histogram.elements();
   T expected {};
   for (std::size_t i = 0; i < elements.size(); ++i) {
-    expected += elements[i];
+    expected = std::move(expected) + elements[i];
     const T actual = histogram.prefixSum(i);
     if (actual != expected) {
       return testing::AssertionFailure() <<
@@ -39,7 +39,7 @@ testing::AssertionResult CheckLowerBound(const CumulativeHistogram<T>& histogram
   auto iter_expected = histogram.begin();
   T prefix_sum {};
   while (iter_expected != histogram.end()) {
-    prefix_sum += *iter_expected;
+    prefix_sum = std::move(prefix_sum) + *iter_expected;
     if (!(prefix_sum < value)) {
       break;
     }
@@ -64,7 +64,7 @@ testing::AssertionResult CheckUpperBound(const CumulativeHistogram<T>& histogram
   auto iter_expected = histogram.begin();
   T prefix_sum {};
   while (iter_expected != histogram.end()) {
-    prefix_sum += *iter_expected;
+    prefix_sum = std::move(prefix_sum) + *iter_expected;
     if (value < prefix_sum) {
       break;
     }
@@ -705,12 +705,6 @@ TEST(CumulativeHistogram, Complex) {
 struct CustomAdditiveType
 {
   unsigned int value;
-
-  constexpr CustomAdditiveType& operator+=(const CustomAdditiveType& other) noexcept
-  {
-    value += other.value;
-    return *this;
-  }
 };
 
 constexpr CustomAdditiveType&& operator+(CustomAdditiveType&& lhs, const CustomAdditiveType& rhs) noexcept
