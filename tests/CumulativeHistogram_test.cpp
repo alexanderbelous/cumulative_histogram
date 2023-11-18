@@ -2,6 +2,7 @@
 
 #include <array>
 #include <complex>
+#include <ostream>
 #include <numeric>
 #include <sstream>
 #include <gtest/gtest.h>
@@ -700,7 +701,50 @@ TEST(CumulativeHistogram, Complex) {
   }
 }
 
+// Minimal user-defined type that satisfies the Additive concept.
+struct CustomAdditiveType
+{
+  unsigned int value;
 
+  constexpr CustomAdditiveType& operator+=(const CustomAdditiveType& other) noexcept
+  {
+    value += other.value;
+    return *this;
+  }
+};
+
+constexpr CustomAdditiveType&& operator+(CustomAdditiveType&& lhs, const CustomAdditiveType& rhs) noexcept
+{
+  lhs.value += rhs.value;
+  return std::move(lhs);
+}
+
+static_assert(Additive<CustomAdditiveType>, "Must satisfy Additive concept.");
+
+// Inequality comparison operator for CustomAdditiveType.
+// This is not needed for the Additive concept, but we need it for tests.
+constexpr bool operator!=(const CustomAdditiveType& lhs, const CustomAdditiveType& rhs) noexcept
+{
+  return lhs.value != rhs.value;
+}
+
+// std::ostream support for CustomAdditiveType.
+// This is not needed for the Additive concept, but we need it for tests.
+std::ostream& operator<< (std::ostream& stream, const CustomAdditiveType& object)
+{
+  return stream << "CustromAdditiveType{ " << object.value << "}";
+}
+
+TEST(CumulativeHistogram, UserDefinedType)
+{
+  CumulativeHistogram<CustomAdditiveType> histogram;
+  histogram.reserve(10);
+  histogram.resize(9);
+  histogram.increment(0, CustomAdditiveType{ 1 });
+  histogram.push_back(CustomAdditiveType{ 5 });
+  histogram.pop_back();
+  EXPECT_TRUE(CheckPrefixSums(histogram));
+}
 
 }
 }

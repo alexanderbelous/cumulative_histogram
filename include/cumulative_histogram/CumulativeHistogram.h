@@ -34,9 +34,6 @@ concept Additive =
   // Given an rvalue `lhs` of type `T&&` an lvalue `rhs` of type `const T&`,
   // the expression `std::move(lhs) + rhs` must be convertible to `T`.
   requires(T&& lhs, const T& rhs) { { std::move(lhs) + rhs } -> std::convertible_to<T>; } &&
-  // Given an lvalue `lhs` of type `const T&` an lvalue `rhs` of type `const T&`,
-  // the expression `lhs + rhs` must be convertible to `T`.
-  requires(const T& lhs, const T& rhs) { { lhs + rhs } -> std::convertible_to<T>; } &&
   // Given an lvalue `lhs` of type `T&` an lvalue `rhs` of type `const T&`,
   // the expression `lhs += rhs` must be valid.
   requires(T& lhs, const T& rhs) { lhs += rhs; };
