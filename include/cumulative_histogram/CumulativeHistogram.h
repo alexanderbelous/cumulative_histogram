@@ -894,10 +894,12 @@ template<class T, class SumOperation>
 void CumulativeHistogram<T, SumOperation>::swap(CumulativeHistogram& other)
 noexcept(std::is_nothrow_swappable_v<std::vector<T>&>)
 {
+  using std::swap;
   elements_.swap(other.elements_);
   std::swap(nodes_, other.nodes_);
   std::swap(capacity_, other.capacity_);
   path_to_last_bucket_.swap(other.path_to_last_bucket_);
+  swap(sum_op_, other.sum_op_);
 }
 
 template<class T, class SumOperation>
