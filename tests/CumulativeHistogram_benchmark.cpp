@@ -168,7 +168,7 @@ void BM_ArrayOfPrefixSumsLowerBound(benchmark::State& state) {
   ArrayOfPrefixSums<ElementTypeForBenchmark> histogram(num_elements, 1);
   std::size_t value = 0;
   for (auto _ : state) {
-    benchmark::DoNotOptimize(histogram.lowerBound(value));
+    benchmark::DoNotOptimize(histogram.lowerBound(static_cast<ElementTypeForBenchmark>(value)));
     ++value;
     if (value == num_elements + 1)
     {
@@ -183,7 +183,7 @@ void BM_CumulativeHisogramLowerBound(benchmark::State& state) {
   CumulativeHistogram<ElementTypeForBenchmark> histogram(num_elements, 1);
   std::size_t value = 0;
   for (auto _ : state) {
-    benchmark::DoNotOptimize(histogram.lowerBound(value));
+    benchmark::DoNotOptimize(histogram.lowerBound(static_cast<ElementTypeForBenchmark>(value)));
     ++value;
     if (value == num_elements + 1)
     {
