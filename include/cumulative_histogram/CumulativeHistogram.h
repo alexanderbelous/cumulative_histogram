@@ -553,6 +553,8 @@ CumulativeHistogram<T, SumOperation>::operator=(const CumulativeHistogram& other
   const size_type num_buckets = Detail_NS::countBuckets(size(), BucketSize);
   // Construct the path to the last active bucket.
   path_to_last_bucket_.build(num_buckets, path_to_last_bucket_.bucketCapacity());
+  // Update the sum operation.
+  sum_op_ = other.sum_op_;
   // Get the full view of the currently effective tree.
   const Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
   // Update the active nodes of the currently effective tree.
@@ -574,6 +576,7 @@ CumulativeHistogram<T, SumOperation>::operator=(CumulativeHistogram&& other)
   nodes_ = std::move(other.nodes_);
   capacity_ = std::exchange(other.capacity_, static_cast<size_type>(0));
   path_to_last_bucket_ = std::move(other.path_to_last_bucket_);
+  sum_op_ = other.sum_op_;
   return *this;
 }
 
