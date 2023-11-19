@@ -61,22 +61,8 @@ public:
   static_assert(std::is_invocable_r_v<T, const SumOperation&, const T&, const T&>,
     "SumOperation must be a callable that with the signature equivalent to "
     "T sum_operation(const T& lhs, const T& rhs);");
-  // Check that SumOperation is an empty class.
-  //
-  // Currently, CumulativeHistogram forbids using stateful classes or function pointers as SumOperation.
-  // The reason is that it's unclear what should be done on assignment/swap - should the state of
-  // SumOperation also be updated?
-  // The answer is "it depends on the use case". One could come up with a SumOperation, which computes either
-  // the minimum or the maximum of the input values, depending on the state. In that case, given 2 objects
-  // histogramMin and histogramMax of type CumulativeHistogram<T, SumOperation> the following expression
-  // becomes ambiguous:
-  //     histogramMin = histogramMax;
-  // Do we simply want to copy the elements from histogramMax to histogramMin, or do we also want
-  // histogramMin to change its behavior, so that histogramMin.prefixSum(i) returns the maximum of elements
-  // [0; i] instead of the minimum of elements [0; i]?
-  // This problem is similar to stateful comparators in std::map and std::set and to stateful allocators in
-  // all STL containers. I don't want to deal with this right now, so let's just forbid stateful operations.
-  static_assert(std::is_empty_v<SumOperation>, "SumOperation must be an empty class.");
+  // Check that SumOperation is copy-constructible.
+  static_assert(std::is_copy_constructible_v<SumOperation>, "SumOperation must be copy-constructible.");
   // CumulativeHistogram splits the elements into buckets and builds an auxiliary binary tree for them
   // (the buckets are the leaves of the tree).
   // The asymptotic time complexities of the operations do not depend on the size of the bucket, but their
@@ -318,7 +304,7 @@ private:
   // whenever a new node is added.
   Detail_NS::CompressedPath path_to_last_bucket_;
   // Function object that implements addition for the type T.
-  // TODO: apply empty base optimization (SumOperation is currently required to be empty if it's an empty class).
+  // TODO: apply empty base optimization if possible.
   SumOperation sum_op_;
 };
 
