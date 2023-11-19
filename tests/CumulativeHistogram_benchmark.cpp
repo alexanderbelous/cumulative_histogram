@@ -5,7 +5,6 @@
 #include <chrono>
 #include <cstdint>
 #include <numeric>
-#include <random>
 #include <stdexcept>
 #include <vector>
 
@@ -90,24 +89,6 @@ class ArrayOfPrefixSums {
 
 using ElementTypeForBenchmark = std::uint32_t;
 
-template<class T, class Enable = void>
-class UniformDistribution {};
-
-template<class T>
-class UniformDistribution<T, std::enable_if_t<std::is_integral_v<T>>> {
-public:
-  using type = std::uniform_int_distribution<T>;
-};
-
-template<class T>
-class UniformDistribution<T, std::enable_if_t<std::is_floating_point_v<T>>> {
-public:
-  using type = std::uniform_real_distribution<T>;
-};
-
-template<class T>
-using UniformDistribution_t = typename UniformDistribution<T>::type;
-
 void BM_CumulativeHisogramBuildTree (benchmark::State& state) {
   const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
   for (auto _ : state) {
@@ -120,12 +101,13 @@ BENCHMARK(BM_CumulativeHisogramBuildTree)->Range(8, 256 << 10);
 void BM_ArrayOfPrefixSumsIncrement(benchmark::State& state) {
   const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
   ArrayOfPrefixSums<ElementTypeForBenchmark> histogram(num_elements);
-  std::mt19937 gen;  // mersenne_twister_engine seeded with some default value.
-  std::uniform_int_distribution<std::size_t> distribution{ 0, num_elements - 1 };
+  std::size_t i = 0;
   for (auto _ : state) {
-    // Increment a random element by 1.
-    const std::size_t i = distribution(gen);
     histogram.increment(i, 1);
+    ++i;
+    if (i == num_elements) {
+      i = 0;
+    }
   }
 }
 BENCHMARK(BM_ArrayOfPrefixSumsIncrement)->Range(8, 256 << 10);
@@ -133,12 +115,13 @@ BENCHMARK(BM_ArrayOfPrefixSumsIncrement)->Range(8, 256 << 10);
 void BM_CumulativeHisogramIncrement(benchmark::State& state) {
   const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
   CumulativeHistogram<ElementTypeForBenchmark> histogram(num_elements);
-  std::mt19937 gen;  // mersenne_twister_engine seeded with some default value.
-  std::uniform_int_distribution<std::size_t> distribution{ 0, num_elements - 1 };
+  std::size_t i = 0;
   for (auto _ : state) {
-    // Increment a random element by 1.
-    const std::size_t i = distribution(gen);
     histogram.increment(i, 1);
+    ++i;
+    if (i == num_elements) {
+      i = 0;
+    }
   }
 }
 BENCHMARK(BM_CumulativeHisogramIncrement)->Range(8, 256 << 10);
@@ -146,12 +129,13 @@ BENCHMARK(BM_CumulativeHisogramIncrement)->Range(8, 256 << 10);
 void BM_ArrayOfElementsPrefixSum(benchmark::State& state) {
   const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
   ArrayOfElements<ElementTypeForBenchmark> histogram(num_elements);
-  std::mt19937 gen;  // mersenne_twister_engine seeded with some default value.
-  std::uniform_int_distribution<std::size_t> distribution{ 0, num_elements - 1 };
+  std::size_t i = 0;
   for (auto _ : state) {
-    // Compute the i-th prefix sum for a random i.
-    const std::size_t i = distribution(gen);
     benchmark::DoNotOptimize(histogram.prefixSum(i));
+    ++i;
+    if (i == num_elements) {
+      i = 0;
+    }
   }
 }
 BENCHMARK(BM_ArrayOfElementsPrefixSum)->RangeMultiplier(2)->Range(8, 256 << 10);
@@ -159,12 +143,13 @@ BENCHMARK(BM_ArrayOfElementsPrefixSum)->RangeMultiplier(2)->Range(8, 256 << 10);
 void BM_CumulativeHisogramPrefixSum(benchmark::State& state) {
   const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
   CumulativeHistogram<ElementTypeForBenchmark> histogram(num_elements);
-  std::mt19937 gen;  // mersenne_twister_engine seeded with some default value.
-  std::uniform_int_distribution<std::size_t> distribution{ 0, num_elements - 1 };
+  std::size_t i = 0;
   for (auto _ : state) {
-    // Compute the i-th prefix sum for a random i.
-    const std::size_t i = distribution(gen);
     benchmark::DoNotOptimize(histogram.prefixSum(i));
+    ++i;
+    if (i == num_elements) {
+      i = 0;
+    }
   }
 }
 BENCHMARK(BM_CumulativeHisogramPrefixSum)->RangeMultiplier(2)->Range(8, 256 << 10);
@@ -181,12 +166,14 @@ BENCHMARK(BM_CumulativeHisogramTotalSum)->RangeMultiplier(2)->Range(8, 256 << 10
 void BM_ArrayOfPrefixSumsLowerBound(benchmark::State& state) {
   const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
   ArrayOfPrefixSums<ElementTypeForBenchmark> histogram(num_elements, 1);
-  std::mt19937 gen;  // mersenne_twister_engine seeded with some default value.
-  UniformDistribution_t<ElementTypeForBenchmark> distribution{ 0, static_cast<ElementTypeForBenchmark>(num_elements + 1) };
+  std::size_t value = 0;
   for (auto _ : state) {
-    // Compute the lower bound for a random value i.
-    const ElementTypeForBenchmark value = distribution(gen);
     benchmark::DoNotOptimize(histogram.lowerBound(value));
+    ++value;
+    if (value == num_elements + 1)
+    {
+      value = 0;
+    }
   }
 }
 BENCHMARK(BM_ArrayOfPrefixSumsLowerBound)->Range(8, 256 << 10);
@@ -194,12 +181,14 @@ BENCHMARK(BM_ArrayOfPrefixSumsLowerBound)->Range(8, 256 << 10);
 void BM_CumulativeHisogramLowerBound(benchmark::State& state) {
   const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
   CumulativeHistogram<ElementTypeForBenchmark> histogram(num_elements, 1);
-  std::mt19937 gen;  // mersenne_twister_engine seeded with some default value.
-  UniformDistribution_t<ElementTypeForBenchmark> distribution{ 0, static_cast<ElementTypeForBenchmark>(num_elements + 1) };
+  std::size_t value = 0;
   for (auto _ : state) {
-    // Compute the lower bound for a random value.
-    const ElementTypeForBenchmark value = distribution(gen);
     benchmark::DoNotOptimize(histogram.lowerBound(value));
+    ++value;
+    if (value == num_elements + 1)
+    {
+      value = 0;
+    }
   }
 }
 BENCHMARK(BM_CumulativeHisogramLowerBound)->Range(8, 256 << 10);

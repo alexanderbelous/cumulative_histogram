@@ -430,7 +430,6 @@ namespace Detail_NS
     }
     else
     {
-      // Otherwise, use operator+(T&&, const T&), which is required by Additive concept.
       lhs = sum_op(std::move(lhs), rhs);
     }
   }
