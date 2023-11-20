@@ -62,7 +62,12 @@ public:
     "SumOperation must be a callable that with the signature equivalent to "
     "T sum_operation(const T& lhs, const T& rhs);");
   // Check that SumOperation is copy-constructible.
-  static_assert(std::is_copy_constructible_v<SumOperation>, "SumOperation must be copy-constructible.");
+  // The requirement that the copy constructor doesn't throw is somewhat too strict - for example, it makes
+  // it impossible to use std::function as SumOperation. However, without it, it wouldn't be possible to
+  // guarantee that even the move constructor of CumulativeHistogram is noexcept (because SumOperation is
+  // always copied, not moved).
+  static_assert(std::is_nothrow_copy_constructible_v<SumOperation>,
+    "SumOperation must be copy-constructible, and its copy constructor must not throw.");
   // CumulativeHistogram splits the elements into buckets and builds an auxiliary binary tree for them
   // (the buckets are the leaves of the tree).
   // The asymptotic time complexities of the operations do not depend on the size of the bucket, but their
