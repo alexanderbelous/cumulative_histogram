@@ -326,58 +326,6 @@ void swap(CumulativeHistogram<T>& lhs, CumulativeHistogram<T>& rhs)
   lhs.swap(rhs);
 }
 
-// ======================================== Implementation ========================================
-
-// CumulativeHistogram stores auxiliary counters for sums of certain elements.
-// These counters are updated whenever the respective elements are modified -
-// this is why CumulativeHistogram::increment() has O(log(N)) time complexity.
-// However, having these sums precomputed also allows efficient computation of the prefix sums.
-//
-// These additional counters form an implicit binary tree:
-// * The main tree represents all elements [0; N).
-// * The left branch is a tree representing elements [0; (N-1)/2].
-// * The right branch is a tree representing elements [(N+1)/2; N).
-// * The tree is balanced: for any node the numbers of nodes in the left and right branches
-//   differ at most by 1.
-// * The nodes of the tree are stored as a plain array: [root, left0, left1, ... leftM, right0, right1, ... rightK].
-// * The root stores the sum of elements from its left branch.
-// * The tree only stores sums of elements, not the individual elements.
-//
-// For example, for N=11, the total number of nodes is countNodesInTree(11) = 6:
-//         _ n0 __
-//        /       \
-//       n1        n4
-//     /    \      /
-//   n2     n3     n5
-// ......imaginary nodes......
-//  /  \    / \    /  \    \
-// x0  x2  x3  x5 x6  x8   x9
-//  \       \      \        \
-//   x1      x4    x7      x10
-//
-// Nodes:
-// +-------------------+----------+---------+-------+----------+---------+
-// |    n0             |    n1    |   n2    |   n3  |    n4    |    n5   |
-// +-------------------+----------+---------+-------+----------+---------+
-// | x0+x1+x2+x3+x4+x5 | x0+x1+x2 | x0+x1   | x3+x4 | x6+x7+x8 | x6 + x7 |
-// +-------------------+----------+---------+-------+----------+---------+
-// Any prefix sum can be computed by going from the root of the tree to the leaf:
-// +---------------------------------------------------------------------------------------------+
-// |  s0  |  s1  |  s2  |  s3   |  s4   |  s5  |  s6   |  s7   |  s8   |  s9      |    s10       |
-// +---------------------------------------------------------------------------------------------+
-// |  x0  |  n2  |  n1  | n1+x3 | n1+n3 |  n0  | n0+x6 | n0+n5 | n0+n4 | n0+n4+x9 | n0+n4+x9+x10 |
-// +---------------------------------------------------------------------------------------------+
-//
-// In order to support efficient insertion, the class grows in the same way that std::vector does:
-// if size() == capacity(), then the next call to push_back() will allocate memory for a histogram
-// capable of storing 2N elements.
-//
-// Note that the way the nodes are stored in a plain array allows to view any subtree as a subspan of
-// that array. This comes in handy, allowing us to pretend that the deepest leftmost subtree that can
-// represent all current elements *is* the tree. This way we ensure that the time complexity of the
-// operations is actually O(logN), and not O(logNmax), where N is the number of elements and
-// Nmax is capacity.
-
 namespace Detail_NS
 {
   // Computes the new capacity for a full tree that currently stores the specified number of elements.

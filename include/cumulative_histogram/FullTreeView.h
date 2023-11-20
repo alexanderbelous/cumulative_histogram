@@ -9,9 +9,74 @@ namespace CumulativeHistogram_NS::Detail_NS
 {
 
 // Non-template base for FullTreeView.
+//
+// CumulativeHistogram stores auxiliary counters for sums of certain elements. These counters are updated
+// whenever the respective elements are modified - because of this, the time complexity of
+// CumulativeHistogram::increment() is O(logN) instead of O(1). However, having these sums precomputed also
+// allows to compute any prefix sum in O(logN).
+//
+// CumulativeHistogram splits the elements into buckets of size B: the first B elements go into the 0th
+// bucket, the next B elements go into the 1st bucket, and so on. These buckets are stored in an implicit
+// binary tree
+// Let N be the number of elements. The number of buckets is M = ceil(N/B); each bucket (except, possibly,
+// the last one) stores exactly B elements.
+// The tree is constructed as descibed below:
+//   * If M <= 1, then the tree has no nodes.
+//   * Otherwise, a node is constructed for the root.
+//     * The left subtree is constructed for the first ceil(M/2) buckets.
+//     * The right subtree is constructed for the remaining floor(M/2) buckets.
+//     * The root itself stores the sum of all elements from the left subtree.
+//
+// The nodes of the tree are stored in a plain array:
+//   { root, left0, left1, ..., leftM1, right0, right1, ..., rightM2 }
+// Due to this representation, any subtree can be viewed as a subspan of the nodes array.
+//
+// For example, let N = 13, B = 2. Then the number of buckets M = ceil(N/B) = ceil(13/2) = 7,
+// and the tree looks like this:
+//         n0
+//       /   \
+//     n1     n4
+//    / \    /
+//   n2 n3  n5
+//
+// Let b[i] be the sum of elements from the i-th bucket. Then, the values stored in the nodes are:
+// +-------------+-------+----+----+-------+----+
+// | n0          | n1    | n2 | n3 | n4    | n5 |
+// +-------------+-------+----+----+-------+----+
+// | b0+b1+b2+b3 | b0+b1 | b0 | b2 | b4+b5 | b4 |
+// +-------------+-------+----+----+-------+----+
+// The sum of the first K buckets sB(K) can be computed via O(logM) additions for any 0 <= K < M:
+// +-------+-------+-------+-------+-------+-------+-------+
+// | sB(0) | sB(1) | sB(2) | sB(3) | sB(4) | sB(5) | sB(6) |
+// +-------+-------+-------+-------+-------+-------+-------+
+// | 0     | n2    | n1    | n1+n2 | n0    | n0+n5 | n0+n4 |
+// +-------+-------+-------+-------+-------+-------+-------+
+// With this, we can compute any prefix sum s(i), 0 <= i < N as:
+//     // Index of the bucket that element i belongs to.
+//     K = floor(i/B);
+//     // Sum of elements from this bucket.
+//     sum_b = element[K*B] + element[K*B + 1] + ... + element[i];
+//     // Sum of elements from the previous buckets.
+//     sum_a = sB(K);
+       // Prefix sum s(i) = element[0] + element[1] + ... + element[i].
+//     s(i) = sum_a + sum_b;
+// The time complexity of this algorithm is O(logM) + O(B) = O(log(N/B)) + O(B).
+// B is a constant independent of N, so the overall time complexity is O(logN).
+//
+// CumulativeHistogram also allows reserving memory for future elements, in which case the tree is
+// constructed for Nmax elements, where Nmax is the desired capacity (0 <= N <= Nmax). However, this doesn't
+// affect the time complexity of any operation: if Nmax is much greater than N, we can easily determine the
+// smallest leftmost subtree that represents all N elements, and traverse it instead of traversing the full
+// tree.
+//
+// This class provides an API for traversing a tree constructed for the specified number of buckets. It is
+// not meant to be used directly - instead, the template class FullTreeView (which is derived from
+// FullTreeViewBase) should be used.
 class FullTreeViewBase
 {
 public:
+  // Constructs a view for a tree for the specified number of buckets.
+  // \param num_buckets - the number of buckets that the tree represents.
   constexpr explicit FullTreeViewBase(std::size_t num_buckets) noexcept:
     bucket_first_(0),
     num_buckets_(num_buckets)
