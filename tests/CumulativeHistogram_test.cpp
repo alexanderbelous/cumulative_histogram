@@ -172,6 +172,20 @@ TEST(CumulativeHistogram, ReverseIterators) {
   }
 }
 
+TEST(CumulativeHistogram, ElementsMove)
+{
+  constexpr std::size_t num_elements = 10;
+  CumulativeHistogram<unsigned int> histogram(num_elements, 1);
+  const unsigned int* const data_was = histogram.elements().data();
+  EXPECT_EQ(histogram.size(), num_elements);
+  // Move the elements out of the histogram.
+  std::vector<unsigned int> elements = std::move(histogram).elements();
+  EXPECT_EQ(elements.data(), data_was);
+  EXPECT_EQ(elements.size(), num_elements);
+  // The histogram must be empty now.
+  EXPECT_TRUE(histogram.empty());
+}
+
 TEST(CumulativeHistogram, Clear) {
   constexpr std::size_t kNumElements = 5;
   // Construct a histogram capable of storing 5 elements.

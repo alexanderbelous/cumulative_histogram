@@ -220,7 +220,11 @@ public:
 
   // Access all elements.
   // Time complexity: O(1).
-  constexpr const std::vector<T>& elements() const noexcept;
+  constexpr const std::vector<T>& elements() const & noexcept;
+
+  // Transfers the ownership of the elements to the caller.
+  // Both size() and capacity() will return 0 after this call.
+  constexpr std::vector<T> elements() && noexcept;
 
   // Access the specified element.
   // Throws std::out_of_range if k >= size().
@@ -892,9 +896,18 @@ noexcept(std::is_nothrow_swappable_v<std::vector<T>&>)
 }
 
 template<class T, class SumOperation>
-constexpr const std::vector<T>& CumulativeHistogram<T, SumOperation>::elements() const noexcept
+constexpr const std::vector<T>& CumulativeHistogram<T, SumOperation>::elements() const & noexcept
 {
   return elements_;
+}
+
+template<class T, class SumOperation>
+constexpr std::vector<T> CumulativeHistogram<T, SumOperation>::elements() && noexcept
+{
+  nodes_.reset();
+  path_to_last_bucket_.clear();
+  capacity_ = 0;
+  return std::move(elements_);
 }
 
 template<class T, class SumOperation>
