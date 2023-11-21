@@ -193,7 +193,7 @@ void BM_CumulativeHisogramLowerBound(benchmark::State& state) {
 }
 BENCHMARK(BM_CumulativeHisogramLowerBound)->Range(8, 256 << 10);
 
-// Measures the average time of calling push_back() N times for a CumulativeHistogram
+// Measures the average time of calling pushBack() N times for a CumulativeHistogram
 // currently storing N elements, and capable of storing 2N elements.
 // The purpose of this benchmark is to demonstrate that the time complexity is amortized constant.
 void BM_CumulativeHisogramPushBackNoReallocation(benchmark::State& state) {
@@ -203,7 +203,7 @@ void BM_CumulativeHisogramPushBackNoReallocation(benchmark::State& state) {
   for (auto _ : state) {
     const auto start = std::chrono::high_resolution_clock::now();
     for (std::size_t i = 0; i < num_elements; ++i) {
-      histogram.push_back(static_cast<ElementTypeForBenchmark>(1));
+      histogram.pushBack(static_cast<ElementTypeForBenchmark>(1));
     }
     const auto end = std::chrono::high_resolution_clock::now();
     const auto elapsed_seconds =

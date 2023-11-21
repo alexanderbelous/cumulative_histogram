@@ -251,7 +251,7 @@ TEST(CumulativeHistogram, Clear) {
   EXPECT_EQ(histogram.size(), 0);
   // Push back 5 new elements {0, 1, 2, 3, 4}.
   for (std::size_t i = 0; i < kNumElements; ++i) {
-    histogram.push_back();
+    histogram.pushBack();
     histogram.increment(i, static_cast<unsigned int>(i));
     EXPECT_EQ(histogram.capacity(), kNumElements);
     EXPECT_EQ(histogram.size(), i + 1);
@@ -354,7 +354,7 @@ TEST(CumulativeHistogram, Reserve) {
 
 TEST(CumulativeHistogram, PushBackZeroInitialized) {
   CumulativeHistogram<unsigned int> histogram;
-  histogram.push_back();
+  histogram.pushBack();
   EXPECT_EQ(histogram.size(), 1);
   EXPECT_EQ(histogram.element(0), 0);
   EXPECT_EQ(histogram.totalSum(), 0);
@@ -363,7 +363,7 @@ TEST(CumulativeHistogram, PushBackZeroInitialized) {
   EXPECT_EQ(histogram.element(0), 42);
   EXPECT_EQ(histogram.totalSum(), 42);
   EXPECT_TRUE(CheckPrefixSums(histogram));
-  histogram.push_back();
+  histogram.pushBack();
   EXPECT_EQ(histogram.size(), 2);
   EXPECT_EQ(histogram.element(0), 42);
   EXPECT_EQ(histogram.element(1), 0);
@@ -374,7 +374,7 @@ TEST(CumulativeHistogram, PushBackZeroInitialized) {
   EXPECT_EQ(histogram.element(1), 5);
   EXPECT_EQ(histogram.totalSum(), 47);
   EXPECT_TRUE(CheckPrefixSums(histogram));
-  histogram.push_back();
+  histogram.pushBack();
   EXPECT_EQ(histogram.size(), 3);
   EXPECT_EQ(histogram.element(0), 42);
   EXPECT_EQ(histogram.element(1), 5);
@@ -398,7 +398,7 @@ TEST(CumulativeHistogram, PushBackNoReallocation) {
     for (std::size_t num_elements = 0; num_elements < capacity;) {
       // Assign histogram[i] = i+1;
       const unsigned int value = static_cast<unsigned int>(num_elements + 1);
-      histogram.push_back(value);
+      histogram.pushBack(value);
       ++num_elements;
       // Check the number of elements.
       EXPECT_EQ(histogram.size(), num_elements);
@@ -421,7 +421,7 @@ TEST(CumulativeHistogram, PushBackNonZero) {
     { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17 };
   CumulativeHistogram<unsigned int> histogram;
   for (std::size_t i = 0; i < kElements.size(); ++i) {
-    histogram.push_back(kElements[i]);
+    histogram.pushBack(kElements[i]);
     const std::size_t new_size = i + 1;
     EXPECT_EQ(histogram.size(), new_size);
     // Check elements.
@@ -441,7 +441,7 @@ TEST(CumulativeHistogram, PopBack) {
   // Remove all elements one by one.
   do {
     --num_elements;
-    histogram.pop_back();
+    histogram.popBack();
     // The number of elements should decrease by 1.
     EXPECT_EQ(histogram.size(), num_elements);
     // Capacity should remain unchanged.
@@ -757,7 +757,7 @@ TEST(CumulativeHistogram, Complex) {
   }};
   CumulativeHistogram<std::complex<float>> histogram;
   for (std::size_t i = 0; i < kElements.size(); ++i) {
-    histogram.push_back(kElements[i]);
+    histogram.pushBack(kElements[i]);
     const std::size_t new_size = i + 1;
     EXPECT_EQ(histogram.size(), new_size);
     // Check elements.
@@ -808,12 +808,12 @@ TEST(CumulativeHistogram, UserDefinedType)
   CumulativeHistogram<CustomType, CustomSum> histogram(CustomSum(10));
   histogram.reserve(10);
   histogram.resize(2);
-  histogram.push_back(CustomType{ 5 });
-  histogram.push_back(CustomType{ 1 });
-  histogram.push_back(CustomType{ 6 });
-  histogram.push_back(CustomType{ 2 });
+  histogram.pushBack(CustomType{ 5 });
+  histogram.pushBack(CustomType{ 1 });
+  histogram.pushBack(CustomType{ 6 });
+  histogram.pushBack(CustomType{ 2 });
   histogram.increment(0, CustomType{ 8 });  // element(0) := element(0) XOR 8;
-  histogram.pop_back();
+  histogram.popBack();
   EXPECT_TRUE(CheckPrefixSums(histogram));
   CumulativeHistogram<CustomType, CustomSum> histogram2 = histogram;
   EXPECT_TRUE(CheckPrefixSums(histogram2));

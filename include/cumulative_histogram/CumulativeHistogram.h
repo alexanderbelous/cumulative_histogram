@@ -194,16 +194,16 @@ public:
 
   // Add a zero-initialized element to the end.
   // Time complexity: amortized O(1).
-  void push_back();
+  void pushBack();
 
   // Add an element to the end.
   // Time complexity: amortized O(1).
-  void push_back(const T& value);
+  void pushBack(const T& value);
 
   // Removes the last element.
   // Throws std::logic_error if this->empty().
   // Time complexity: O(1).
-  void pop_back();
+  void popBack();
 
   // Changes the number of elements stored.
   // \param num_elements - the new number of elements in the histogram.
@@ -252,7 +252,7 @@ public:
   // Time complexity: O(log(N)).
   //
   // Note that it could be possible to implement this class so that totalSum() had O(1) time complexity:
-  // for example, we could just add a member varaible and update it whenever push_back(), pop_back(),
+  // for example, we could just add a member varaible and update it whenever pushBack(), popBack(),
   // increment() or resize() are called - updating the total sum would not affect the time complexity
   // of these operations.
   // However, it would unnecessarily affect performance in the use cases where the total sum is not needed
@@ -301,14 +301,14 @@ private:
   std::unique_ptr<T[]> nodes_;
   // Current capacity Nmax.
   // Nmax <= elements_.capacity(). We store the capacity explicitly because we want to double it when
-  // calling push_back() at full capacity (to avoid rebuilding the tree), but std::vector doesn't
+  // calling pushBack() at full capacity (to avoid rebuilding the tree), but std::vector doesn't
   // guarantee that it doubles the capacity.
   size_type capacity_ = 0;
   // Path from the root of the currently effective tree to the leaf node that represents the last active bucket.
   // This path can be easily constructed by traversing the tree, but storing it in CumulativeHistogram has a benefit:
-  // it allows to quickly (in O(1)) find the tree that needs to be extended after push_back(), and updating the path
-  // itself after push_back() or pop_back() also takes O(1) time.
-  // Without it, the time complexity of push_back() would've been O(logN) because we would have to traverse the tree
+  // it allows to quickly (in O(1)) find the tree that needs to be extended after pushBack(), and updating the path
+  // itself after pushBack() or popBack() also takes O(1) time.
+  // Without it, the time complexity of pushBack() would've been O(logN) because we would have to traverse the tree
   // whenever a new node is added.
   Detail_NS::CompressedPath path_to_last_bucket_;
   // Function object that implements addition for the type T.
@@ -745,13 +745,13 @@ void CumulativeHistogram<T, SumOperation>::fill(const T& value)
 }
 
 template<class T, class SumOperation>
-void CumulativeHistogram<T, SumOperation>::push_back()
+void CumulativeHistogram<T, SumOperation>::pushBack()
 {
-  push_back(T{});
+  pushBack(T{});
 }
 
 template<class T, class SumOperation>
-void CumulativeHistogram<T, SumOperation>::push_back(const T& value)
+void CumulativeHistogram<T, SumOperation>::pushBack(const T& value)
 {
   // Double the capacity if needed.
   if (size() == capacity())
@@ -786,18 +786,18 @@ void CumulativeHistogram<T, SumOperation>::push_back(const T& value)
 }
 
 template<class T, class SumOperation>
-void CumulativeHistogram<T, SumOperation>::pop_back()
+void CumulativeHistogram<T, SumOperation>::popBack()
 {
   if (empty())
   {
-    throw std::logic_error("CumulativeHistogram::pop_back(): there are no elements left to remove.");
+    throw std::logic_error("CumulativeHistogram::popBack(): there are no elements left to remove.");
   }
   // TODO: find the deepest rightmost subtree. If we are removing the only element from that subtree,
   // then we should destroy its *effective* root node.
   // Currently, though, we don't construct/destroy nodes, so whatever.
   elements_.pop_back();
   // Update the path to the last bucket if the number of buckets has changed.
-  // The number of buckets changes only if there was K*BucketSize+1 elements before pop_back().
+  // The number of buckets changes only if there was K*BucketSize+1 elements before popBack().
   if (size() % bucket_size == 0)
   {
     path_to_last_bucket_.popBack();
@@ -834,7 +834,7 @@ void CumulativeHistogram<T, SumOperation>::resize(size_type num_elements)
   const size_type elements_to_add = num_elements - size();
   for (size_type i = 0; i < elements_to_add; ++i)
   {
-    push_back(T{});
+    pushBack(T{});
   }
 }
 
