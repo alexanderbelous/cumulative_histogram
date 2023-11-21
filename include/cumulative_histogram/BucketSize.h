@@ -18,22 +18,46 @@ namespace Detail_NS
 // factor in this time complexity is significant enough to justify using larger buckets for types T for which
 // addition is fast. Moreover, using larger buckets can improve performance for built-in arithmetic types by
 // enabling vectorization.
+//
+// The time complexities of the operations of CumulativeHistogram with respect to both N and BucketSize:
+// +--------------+--------------------------------------+
+// | increment()  | O(log(N/BucketSize))                 |
+// +--------------+--------------------------------------+
+// | prefixSum()  | O(log(N/BucketSize)) + O(BucketSize) |
+// +--------------+--------------------------------------+
+// | lowerBound() | O(log(N/BucketSize)) + O(BucketSize) |
+// +--------------+--------------------------------------+
+// | pushBack()   | TODO                                 |
+// +--------------+--------------------------------------+
+// | popBack()    | O(1)                                 |
+// +--------------+--------------------------------------+
 template<class T, class Enable = void>
 class DefaultBucketSize : public std::integral_constant<std::size_t, 2> {};
 
-// Partial specialization for 32-bit integer types: bucket size is 128.
+// Partial specialization for 8-bit integer types.
+template<class T>
+class DefaultBucketSize<T, std::enable_if_t<std::is_integral_v<T> && sizeof(T) == 1>> :
+  public std::integral_constant<std::size_t, 128> {};
+
+// Partial specialization for 16-bit integer types.
+template<class T>
+class DefaultBucketSize<T, std::enable_if_t<std::is_integral_v<T> && sizeof(T) == 2>> :
+  public std::integral_constant<std::size_t, 128> {};
+
+// Partial specialization for 32-bit integer types.
 template<class T>
 class DefaultBucketSize<T, std::enable_if_t<std::is_integral_v<T> && sizeof(T) == 4>> :
   public std::integral_constant<std::size_t, 128> {};
 
-// Partial specialization for 64-bit integer types: bucket size is 128.
+// Partial specialization for 64-bit integer types.
 template<class T>
 class DefaultBucketSize<T, std::enable_if_t<std::is_integral_v<T> && sizeof(T) == 8>> :
   public std::integral_constant<std::size_t, 128> {};
 
-// Full specialization for float.
-template<>
-class DefaultBucketSize<float> : public std::integral_constant<std::size_t, 64> {};
+// Partial specialization for floating-point types (float, double, long double).
+template<class T>
+class DefaultBucketSize<T, std::enable_if_t<std::is_floating_point_v<T>>> :
+  public std::integral_constant<std::size_t, 16> {};
 
 }  // namespace Detail_NS
 
