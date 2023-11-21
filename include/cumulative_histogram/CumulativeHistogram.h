@@ -72,9 +72,9 @@ public:
   // (the buckets are the leaves of the tree).
   // The asymptotic time complexities of the operations do not depend on the size of the bucket, but their
   // constant factors do.
-  static constexpr std::size_t BucketSize = BucketSize<T>::value;
+  static constexpr std::size_t bucket_size = BucketSize<T>::value;
   // Check that the number of elements per bucket is greater than or equal to 2.
-  static_assert(BucketSize >= 2, "BucketSize should not be less than 2.");
+  static_assert(bucket_size >= 2, "Bucket size should not be less than 2.");
 
   using value_type = T;
   // TODO: declare as `typename std::vector<T>::size_type`.
@@ -493,7 +493,7 @@ CumulativeHistogram<T, SumOperation>::operator=(const CumulativeHistogram& other
   elements_.clear();
   elements_.insert(elements_.end(), other.begin(), other.end());
   // Compute the new number of active buckets.
-  const size_type num_buckets = Detail_NS::countBuckets(size(), BucketSize);
+  const size_type num_buckets = Detail_NS::countBuckets(size(), bucket_size);
   // Construct the path to the last active bucket.
   path_to_last_bucket_.build(num_buckets, path_to_last_bucket_.bucketCapacity());
   // Update the sum operation.
@@ -503,7 +503,7 @@ CumulativeHistogram<T, SumOperation>::operator=(const CumulativeHistogram& other
   // Update the active nodes of the currently effective tree.
   if (!tree.empty())
   {
-    Detail_NS::buildBucketizedTree<T>(elements_, tree, BucketSize, sum_op_);
+    Detail_NS::buildBucketizedTree<T>(elements_, tree, bucket_size, sum_op_);
   }
   return *this;
 }
@@ -530,7 +530,7 @@ CumulativeHistogram<T, SumOperation>::CumulativeHistogram(size_type num_elements
   capacity_(num_elements),
   sum_op_(sum_op)
 {
-  const size_type num_buckets = Detail_NS::countBuckets(num_elements, BucketSize);
+  const size_type num_buckets = Detail_NS::countBuckets(num_elements, bucket_size);
   const size_type num_nodes = Detail_NS::countNodesInBucketizedTree(num_buckets);
   if (num_nodes != 0)
   {
@@ -553,7 +553,7 @@ CumulativeHistogram<T, SumOperation>::CumulativeHistogram(std::vector<T>&& eleme
   capacity_(elements_.size()),
   sum_op_(sum_op)
 {
-  const size_type num_buckets = Detail_NS::countBuckets(capacity_, BucketSize);
+  const size_type num_buckets = Detail_NS::countBuckets(capacity_, bucket_size);
   // Construct a path to the last bucket.
   path_to_last_bucket_.build(num_buckets, num_buckets);
   // TODO: only construct nodes that are needed to represent the current level.
@@ -563,7 +563,7 @@ CumulativeHistogram<T, SumOperation>::CumulativeHistogram(std::vector<T>&& eleme
     // Allocate and default-initialize the nodes - there's no need to zero-initialize them.
     nodes_ = std::make_unique_for_overwrite<T[]>(num_nodes);
     const Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
-    Detail_NS::buildBucketizedTree<T>(elements_, tree, BucketSize, sum_op_);
+    Detail_NS::buildBucketizedTree<T>(elements_, tree, bucket_size, sum_op_);
   }
 }
 
@@ -636,7 +636,7 @@ void CumulativeHistogram<T, SumOperation>::reserve(size_type num_elements)
   const std::size_t bucket_capacity =
     Detail_NS::countElementsInLeftmostSubtree(path_to_last_bucket_.bucketCapacity(), root_idx_old);
   // The maximum number of buckets the new tree can represent.
-  const std::size_t bucket_capacity_new = Detail_NS::countBuckets(num_elements, BucketSize);
+  const std::size_t bucket_capacity_new = Detail_NS::countBuckets(num_elements, bucket_size);
   // Compute the number of nodes in the new tree.
   const std::size_t num_nodes_new = Detail_NS::countNodesInBucketizedTree(bucket_capacity_new);
 
@@ -664,11 +664,11 @@ void CumulativeHistogram<T, SumOperation>::reserve(size_type num_elements)
     // The old tree is not a subtree of the new tree, so we have to build the new one from scratch.
     // Construct a FullTreeView for the currently effective subtree of the new tree.
     const Detail_NS::FullTreeView<T> tree_new =
-      Detail_NS::makeFullTreeView(elements_.size(), num_elements, BucketSize, new_nodes_span);
+      Detail_NS::makeFullTreeView(elements_.size(), num_elements, bucket_size, new_nodes_span);
     // Initialize the active nodes of the new tree.
     if (!tree_new.empty())
     {
-      Detail_NS::buildBucketizedTree<T>(elements_, tree_new, BucketSize, sum_op_);
+      Detail_NS::buildBucketizedTree<T>(elements_, tree_new, bucket_size, sum_op_);
     }
     // Reserve new data for elements.
     elements_.reserve(num_elements);
@@ -738,7 +738,7 @@ void CumulativeHistogram<T, SumOperation>::fill(const T& value)
   // However, the time complexity will still be O(N), so whatever.
   if (!tree.empty())
   {
-    Detail_NS::buildBucketizedTree<T>(elements_, tree, BucketSize, sum_op_);
+    Detail_NS::buildBucketizedTree<T>(elements_, tree, bucket_size, sum_op_);
   }
 }
 
@@ -757,7 +757,7 @@ void CumulativeHistogram<T, SumOperation>::push_back(const T& value)
     reserve(Detail_NS::computeNewCapacityForFullTree(capacity()));
   }
   // Check if adding an element will increase the number of buckets.
-  if (size() % BucketSize != 0)
+  if (size() % bucket_size != 0)
   {
     elements_.push_back(value);
     return;
@@ -773,11 +773,11 @@ void CumulativeHistogram<T, SumOperation>::push_back(const T& value)
     T* new_node = subtree_root - 1;
     // Compute the sum of all elements in the effective right subtree.
     // This has O(logN) time complexity in the worst case, but, fortunately, the amortized time complexity is O(1).
-    const std::size_t element_first = subtree_to_extend.bucketFirst() * BucketSize;
+    const std::size_t element_first = subtree_to_extend.bucketFirst() * bucket_size;
     const std::span<const T> subtree_elements = std::span<const T>(elements_).subspan(element_first);
     const Detail_NS::FullTreeView<const T> subtree(subtree_root, subtree_to_extend.numBuckets());
     // Construct the new node.
-    *new_node = Detail_NS::sumElementsOfFullTree<T>(subtree_elements, subtree, BucketSize, sum_op_);
+    *new_node = Detail_NS::sumElementsOfFullTree<T>(subtree_elements, subtree, bucket_size, sum_op_);
   }
   elements_.push_back(value);
   path_to_last_bucket_.pushBack();
@@ -796,7 +796,7 @@ void CumulativeHistogram<T, SumOperation>::pop_back()
   elements_.pop_back();
   // Update the path to the last bucket if the number of buckets has changed.
   // The number of buckets changes only if there was K*BucketSize+1 elements before pop_back().
-  if (size() % BucketSize == 0)
+  if (size() % bucket_size == 0)
   {
     path_to_last_bucket_.popBack();
   }
@@ -817,8 +817,8 @@ void CumulativeHistogram<T, SumOperation>::resize(size_type num_elements)
     // TODO: destoy the nodes that are no longer needed. Currenlty this is not needed because
     // we don't construct/destroy nodes manually.
     elements_.resize(num_elements);
-    path_to_last_bucket_.build(Detail_NS::countBuckets(size(), BucketSize),
-                               Detail_NS::countBuckets(capacity(), BucketSize));
+    path_to_last_bucket_.build(Detail_NS::countBuckets(size(), bucket_size),
+                               Detail_NS::countBuckets(capacity(), bucket_size));
     return;
   }
   // Append N'-N elements if N < N'.
@@ -882,7 +882,7 @@ void CumulativeHistogram<T, SumOperation>::increment(size_type k, const T& value
   while (!tree.empty())
   {
     // The root of the tree stores the sum of all elements [first; middle).
-    const std::size_t middle = tree.pivot() * BucketSize;
+    const std::size_t middle = tree.pivot() * bucket_size;
     if (k_plus_one > middle)
     {
       tree.switchToRightChild();
@@ -928,7 +928,7 @@ T CumulativeHistogram<T, SumOperation>::prefixSum(size_type k) const
   while (!tree.empty())
   {
     // The root of the tree stores the sum of all elements [first; middle).
-    const std::size_t middle = tree.pivot() * BucketSize;
+    const std::size_t middle = tree.pivot() * bucket_size;
     if (k_plus_one < middle)
     {
       tree.switchToLeftChild();
@@ -944,7 +944,7 @@ T CumulativeHistogram<T, SumOperation>::prefixSum(size_type k) const
     }
   }
   // Add elements from the bucket.
-  const size_type first = tree.bucketFirst() * BucketSize;
+  const size_type first = tree.bucketFirst() * bucket_size;
   return std::accumulate(elements_.begin() + first, elements_.begin() + k_plus_one, std::move(result), sum_op_);
 }
 
@@ -977,7 +977,7 @@ T CumulativeHistogram<T, SumOperation>::totalSum() const
     }
   }
   // Add elements from the last bucket.
-  const size_type first = tree.bucketFirst() * BucketSize;
+  const size_type first = tree.bucketFirst() * bucket_size;
   return std::accumulate(elements_.begin() + first, elements_.end(), std::move(result), sum_op_);
 }
 
@@ -1029,12 +1029,12 @@ auto CumulativeHistogram<T, SumOperation>::lowerBound(const T& value, Compare cm
     }
   }
   // We know that cmp(prefixSum(i), value) == true for all i < k_lower
-  const std::size_t k_lower = tree.bucketFirst() * BucketSize;
+  const std::size_t k_lower = tree.bucketFirst() * bucket_size;
   // If k_upper_theoretical < size(), then cmp(prefixSum(i), value) == false for all i >= k_upper_theoretical
   // and prefix_sum_upper = prefixSum(k_upper_theoretical).
   // Otherwise, it means that we haven't yet encountered any i such that cmp(prefixSum(i), value) == false,
   // and prefix_sum_upper remains value-initialized.
-  const std::size_t k_upper_theoretical = k_lower + BucketSize;
+  const std::size_t k_upper_theoretical = k_lower + bucket_size;
   const std::size_t k_upper = std::min(k_upper_theoretical, size());
   T prefix_sum = std::move(prefix_sum_before_lower);
   const_iterator iter = begin() + k_lower;
