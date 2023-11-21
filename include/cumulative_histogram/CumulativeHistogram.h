@@ -483,6 +483,10 @@ template<class T, class SumOperation>
 constexpr CumulativeHistogram<T, SumOperation>&
 CumulativeHistogram<T, SumOperation>::operator=(const CumulativeHistogram& other)
 {
+  if (this == std::addressof(other))
+  {
+    return *this;
+  }
   if (capacity_ < other.size())
   {
     // Delegate to copy constructor and move assignment operator.
@@ -490,8 +494,7 @@ CumulativeHistogram<T, SumOperation>::operator=(const CumulativeHistogram& other
   }
   // Our capacity is sufficient to store all elements from `other`, so no memory allocation is needed.
   // TODO: check the special case when the other tree can be copied.
-  elements_.clear();
-  elements_.insert(elements_.end(), other.begin(), other.end());
+  elements_ = other.elements_;
   // Compute the new number of active buckets.
   const size_type num_buckets = Detail_NS::countBuckets(size(), bucket_size);
   // Construct the path to the last active bucket.

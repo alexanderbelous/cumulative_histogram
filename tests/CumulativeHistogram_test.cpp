@@ -148,6 +148,54 @@ TEST(CumulativeHistogram, ConstructFromSinglePassRange) {
   EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
+TEST(CumulativeHistogram, CopyAssignmentWithinCapacity)
+{
+  constexpr std::size_t capacity = 128;
+  constexpr std::size_t num_elements_new = 47;
+  static_assert(num_elements_new <= capacity);
+
+  CumulativeHistogram<int> histogram1;
+  histogram1.reserve(capacity);
+  const int* const data_was = histogram1.elements().data();
+  const CumulativeHistogram<int> histogram2(num_elements_new, 1);
+  histogram1 = histogram2;
+  EXPECT_EQ(histogram1.elements(), histogram2.elements());
+  EXPECT_EQ(histogram1.capacity(), capacity);
+  EXPECT_EQ(histogram1.elements().data(), data_was);
+  EXPECT_TRUE(CheckPrefixSums(histogram1));
+}
+
+TEST(CumulativeHistogram, CopyAssignmentOutsideCapacity)
+{
+  constexpr std::size_t capacity = 128;
+  constexpr std::size_t num_elements_new = 147;
+  static_assert(num_elements_new > capacity);
+
+  CumulativeHistogram<int> histogram1;
+  histogram1.reserve(capacity);
+  const CumulativeHistogram<int> histogram2(num_elements_new, 1);
+  histogram1 = histogram2;
+  EXPECT_EQ(histogram1.elements(), histogram2.elements());
+  EXPECT_GE(histogram1.capacity(), num_elements_new);
+  EXPECT_TRUE(CheckPrefixSums(histogram1));
+}
+
+TEST(CumulativeHistogram, CopyAssignmentSelf)
+{
+  constexpr std::size_t capacity = 128;
+  constexpr std::size_t num_elements = 47;
+  static_assert(num_elements <= capacity);
+
+  CumulativeHistogram<int> histogram(num_elements, 1);
+  histogram.reserve(capacity);
+  const int* const data_was = histogram.elements().data();
+  histogram = histogram;
+  EXPECT_EQ(histogram.capacity(), capacity);
+  EXPECT_EQ(histogram.size(), num_elements);
+  EXPECT_EQ(histogram.elements().data(), data_was);
+  EXPECT_TRUE(CheckPrefixSums(histogram));
+}
+
 TEST(CumulativeHistogram, Iterators) {
   constexpr std::array<unsigned int, 5> kElements = { 1, 2, 3, 4, 5 };
   CumulativeHistogram<unsigned int> histogram(kElements.begin(), kElements.end());
