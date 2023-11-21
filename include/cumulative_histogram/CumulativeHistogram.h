@@ -248,8 +248,7 @@ public:
   // Time complexity: O(log(N)).
   T prefixSum(size_type k) const;
 
-  // Returns the total sum of all elements.
-  // Throws std::logic_error if this->empty().
+  // Returns the sum of all elements, or T{} if the histogram is empty.
   // Time complexity: O(log(N)).
   //
   // Note that it could be possible to implement this class so that totalSum() had O(1) time complexity:
@@ -954,33 +953,37 @@ T CumulativeHistogram<T, SumOperation>::prefixSum(size_type k) const
 template<class T, class SumOperation>
 T CumulativeHistogram<T, SumOperation>::totalSum() const
 {
-  if (empty())
-  {
-    throw std::logic_error("CumulativeHistogram::totalSum(): the histogram is empty.");
-  }
-  const std::size_t num_buckets = path_to_last_bucket_.numBuckets();
   T result {};
-  // Full view of the currently effective tree.
-  Detail_NS::FullTreeView<const T> tree = getFullTreeView();
-  while (!tree.empty())
+  const std::size_t num_buckets = path_to_last_bucket_.numBuckets();
+  // 0-based index of the first element in the last bucket.
+  std::size_t first = 0;
+  if (num_buckets > 1)
   {
-    // The tree represents buckets [first; last).
-    // Its left subtree represents buckets [first; middle), and the right subtree represents [middle; last).
-    // The root of the tree stores the sum of all elements from the buckets of the left subtree.
-    // However, the root is only active if the right subtree is not empty.
-    // The right subtree is empty if all elements are in the left subtree, i.e. if num_buckets <= middle.
-    if (num_buckets <= tree.pivot())
+    // Full view of the currently effective tree.
+    Detail_NS::FullTreeView<const T> tree = getFullTreeView();
+    // If the currently effective tree is not empty, then, by definition, its root is an active node.
+    result = tree.root();
+    tree.switchToRightChild();
+    while (!tree.empty())
     {
-      tree.switchToLeftChild();
+      // The tree represents buckets [first; last).
+      // Its left subtree represents buckets [first; middle), and the right subtree represents [middle; last).
+      // The root of the tree stores the sum of all elements from the buckets of the left subtree.
+      // However, the root is only active if the right subtree is not empty.
+      // The right subtree is empty if all elements are in the left subtree, i.e. if num_buckets <= middle.
+      if (num_buckets <= tree.pivot())
+      {
+        tree.switchToLeftChild();
+      }
+      else
+      {
+        Detail_NS::addForAdditive(result, tree.root(), sum_op_);
+        tree.switchToRightChild();
+      }
     }
-    else
-    {
-      Detail_NS::addForAdditive(result, tree.root(), sum_op_);
-      tree.switchToRightChild();
-    }
+    first = tree.bucketFirst() * bucket_size;
   }
   // Add elements from the last bucket.
-  const size_type first = tree.bucketFirst() * bucket_size;
   return std::accumulate(elements_.begin() + first, elements_.end(), std::move(result), sum_op_);
 }
 

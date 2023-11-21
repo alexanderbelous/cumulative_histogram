@@ -31,6 +31,11 @@ testing::AssertionResult CheckPrefixSums(const CumulativeHistogram<T, SumOperati
         "Expected prefixSum(" << i << ") to return " << expected << "; got " << actual;
     }
   }
+  const T total_sum_actual = histogram.totalSum();
+  if (total_sum_actual != expected) {
+    return testing::AssertionFailure() <<
+      "Expected totalSum() to return " << expected << "; got " << total_sum_actual;
+  }
   return testing::AssertionSuccess();
 }
 
