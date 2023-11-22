@@ -312,8 +312,11 @@ private:
   // whenever a new node is added.
   Detail_NS::CompressedPath path_to_last_bucket_;
   // Function object that implements addition for the type T.
-  // TODO: apply empty base optimization if possible.
-  SumOperation sum_op_;
+#ifdef _MSC_VER
+  [[msvc::no_unique_address]] SumOperation sum_op_;
+#else
+  [[no_unique_address]] SumOperation sum_op_;
+#endif
 };
 
 // Swaps the contents of the given histograms.
