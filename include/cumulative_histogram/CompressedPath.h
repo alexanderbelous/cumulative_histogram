@@ -309,14 +309,6 @@ public:
   // Constructs an empty path.
   constexpr explicit CompressedPath() noexcept = default;
 
-  //explicit CompressedPath(std::size_t bucket_capacity):
-  //  bucket_capacity_(bucket_capacity),
-  //  num_buckets_(0),
-  //  root_level_(findDeepestNodeForElements(0, bucket_capacity))
-  //{
-  //  path_.reserve(maxPathLength(bucket_capacity));
-  //}
-
   inline CompressedPath(CompressedPath&& other) noexcept;
 
   inline CompressedPath& operator=(CompressedPath&& other) noexcept;
@@ -410,17 +402,8 @@ private:
   // Time complexity: O(1).
   static constexpr Entry makeEntryForDeepestLeftmostSubtree(const PathEntry& path_entry) noexcept;
 
-  // Compute the maximum length of a path for a tree of the specified capacity.
-  // \param bucket_capacity - the maximum number of buckets the tree can represent.
-  // \return the maximum number of nodes between the root (exclusive) and a leaf (inclusive) for
-  // a tree that can represent up to `bucket_capacity` buckets.
-  // Time complexity: O(1).
-  static constexpr std::size_t maxPathLength(std::size_t bucket_capacity) noexcept;
-
   CompressedPathStorage storage_;
-  //std::vector<Entry> path_;
   // TODO: just store an entry for the root.
-  //std::size_t bucket_capacity_ = 0;
   std::size_t num_buckets_ = 0;
   std::size_t root_level_ = 0;
 };
@@ -813,21 +796,6 @@ constexpr PathEntry CompressedPath::getRootEntry() const noexcept
 {
   const std::size_t bucket_capacity_current = countElementsInLeftmostSubtree(bucketCapacity(), root_level_);
   return PathEntry(0, bucket_capacity_current);
-}
-
-constexpr std::size_t CompressedPath::maxPathLength(std::size_t bucket_capacity) noexcept
-{
-  // Let f(N) be the height of the full tree representing N buckets, i.e.
-  // the maximum length of the path from the root (inclusive) to a leaf (inclusive):
-  // f(0) = 0
-  // f(1) = 1
-  // ...
-  // f(2N) = 1 + f(N)
-  // f(2N+1) = 1 + f(N+1)
-  // I.e. f(N) = 1 + ceil(log2(N)) for N >= 1.
-  // We don't store the root in the path, so the maximum number of nodes in the path
-  // is f(N)-1 = ceil(log2(N)).
-  return bucket_capacity == 0 ? 0 : ceilLog2(bucket_capacity);
 }
 
 }  // namespace CumulativeHistogram_NS::Detail_NS
