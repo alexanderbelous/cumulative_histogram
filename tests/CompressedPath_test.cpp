@@ -71,6 +71,49 @@ static constexpr bool operator!=(const CompressedPath& lhs, const CompressedPath
 
 namespace {
 
+struct CompressedPathData
+{
+  std::vector<CompressedPath::Entry> path;
+  std::size_t bucket_capacity;
+  std::size_t num_buckets;
+  std::size_t root_level;
+};
+
+CompressedPathData getCompressedPathData(const CompressedPath& path)
+{
+  const std::span<const CompressedPath::Entry> entries = path.path();
+  return { .path = std::vector<CompressedPath::Entry>{entries.begin(), entries.end()},
+            .bucket_capacity = path.bucketCapacity(),
+            .num_buckets = path.numBuckets(),
+            .root_level = path.rootLevel() };
+}
+
+std::ostream& operator<<(std::ostream& stream, const CompressedPathData& path) {
+  stream << "{bucket_capacity: " << path.bucket_capacity
+          << " num_buckets: " << path.num_buckets
+          << " root_level: " << path.root_level
+          << " path: [";
+  auto iter = path.path.begin();
+  if (iter != path.path.end()) {
+    stream << *iter;
+    for (++iter; iter != path.path.end(); ++iter) {
+      stream << ", " << *iter;
+    }
+  }
+  return stream << "]}";
+}
+
+constexpr bool operator==(const CompressedPathData& lhs, const CompressedPathData& rhs) noexcept {
+  return lhs.bucket_capacity == rhs.bucket_capacity &&
+         lhs.num_buckets == rhs.num_buckets &&
+         lhs.root_level == rhs.root_level &&
+         lhs.path == rhs.path;
+}
+
+constexpr bool operator!=(const CompressedPathData& lhs, const CompressedPathData& rhs) noexcept {
+  return !(lhs == rhs);
+}
+
 // Similar to FullTreeView, but
 //   * skips inactive nodes when switching to subtrees.
 //   * stores the absolute index of the root node instead of a pointer.
@@ -256,7 +299,10 @@ TEST(CompressedPath, ReserveLessOrSameAsCurrentCapacity) {
       CompressedPath path;
       path.build(num_buckets, bucket_capacity);
       for (std::size_t new_capacity = 0; new_capacity <= bucket_capacity; ++new_capacity) {
-        CompressedPath path2 = path;
+        CompressedPath path2;
+        path2.build(num_buckets, bucket_capacity);
+        EXPECT_EQ(path2, path);
+        //CompressedPath path2 = path;
         path2.reserve(new_capacity);
         EXPECT_EQ(path2, path);
       }
@@ -284,7 +330,8 @@ TEST(CompressedPath, PushBack) {
   constexpr std::size_t kBucketCapacityMax = 128;
   for (std::size_t bucket_capacity = kBucketCapacityMin; bucket_capacity <= kBucketCapacityMax; ++bucket_capacity) {
     std::size_t num_buckets = 0;
-    CompressedPath path{ bucket_capacity };
+    CompressedPath path; // { bucket_capacity };
+    path.reserve(bucket_capacity);
     for (std::size_t i = 0; i < bucket_capacity; ++i) {
       ++num_buckets;
       path.pushBack();
@@ -303,16 +350,18 @@ TEST(CompressedPath, PopBack) {
   constexpr std::size_t kBucketCapacityMin = 1;
   constexpr std::size_t kBucketCapacityMax = 128;
   for (std::size_t bucket_capacity = kBucketCapacityMin; bucket_capacity <= kBucketCapacityMax; ++bucket_capacity) {
-    CompressedPath path{ bucket_capacity };
+    CompressedPath path;
+    path.reserve(bucket_capacity);
     for (std::size_t i = 0; i < bucket_capacity; ++i) {
       // Make a temporary copy of the path.
-      const CompressedPath path_was = path;
+      const CompressedPathData path_old = getCompressedPathData(path);
       // Add a bucket.
       path.pushBack();
       // Immediately remove the last bucket.
       path.popBack();
       // Check that the path is now in the same state as it was before pushBack().
-      EXPECT_EQ(path, path_was);
+      const CompressedPathData path_new = getCompressedPathData(path);
+      EXPECT_EQ(path_new, path_old);
       // Add a bucket again.
       path.pushBack();
     }
@@ -323,7 +372,8 @@ TEST(CompressedPath, FindTreeToExtendAfterPushBack) {
   constexpr std::size_t kBucketCapacityMin = 1;
   constexpr std::size_t kBucketCapacityMax = 128;
   for (std::size_t bucket_capacity = kBucketCapacityMin; bucket_capacity <= kBucketCapacityMax; ++bucket_capacity) {
-    CompressedPath path{ bucket_capacity };
+    CompressedPath path;
+    path.reserve(bucket_capacity);
     for (std::size_t num_buckets = 0; num_buckets < bucket_capacity;) {
       // Add a bucket.
       path.pushBack();

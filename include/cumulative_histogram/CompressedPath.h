@@ -3,7 +3,11 @@
 #include <cumulative_histogram/FullTreeView.h>
 #include <cumulative_histogram/Math.h>
 
+#include <algorithm>
 #include <cassert>
+#include <memory>
+#include <span>
+#include <utility>
 #include <vector>
 
 namespace CumulativeHistogram_NS::Detail_NS
@@ -14,6 +18,12 @@ namespace CumulativeHistogram_NS::Detail_NS
 class PathEntry : public FullTreeViewBase
 {
 public:
+  // Default constructor.
+  // This is only meant to be used in CompressedPathStorage.
+  constexpr PathEntry() noexcept:
+    PathEntry(0, 0)
+  {}
+
   constexpr explicit PathEntry(std::size_t root_offset, std::size_t num_buckets) noexcept :
     FullTreeViewBase(num_buckets),
     root_offset_(root_offset)
@@ -79,8 +89,8 @@ private:
   std::size_t root_offset_;
 };
 
-// Stores a compressed path to the last bucket in the tree.
-class CompressedPath
+// Storage for CompressedPath.
+class CompressedPathStorage
 {
 public:
   struct Entry
@@ -89,33 +99,238 @@ public:
     std::size_t level;
   };
 
+  constexpr CompressedPathStorage() noexcept = default;
+
+  inline CompressedPathStorage(CompressedPathStorage&& other) noexcept;
+
+  inline CompressedPathStorage& operator=(CompressedPathStorage&& other) noexcept;
+
+  ~CompressedPathStorage() = default;
+
+  // CompressedPathStorage is non-copyable.
+  // It's easy to implement the copy consructor and the copy assignment operator, but we don't need them
+  // anyway: CompressedPath is only intended to be used in CumulativeHistogram, and CumulativeHistogram
+  // doesn't blindly copy the path in its copy constructor / copy assignment operator.
+  CompressedPathStorage(const CompressedPathStorage&) = delete;
+  CompressedPathStorage& operator=(const CompressedPathStorage&) = delete;
+
+  inline void swap(CompressedPathStorage& other) noexcept;
+
+  constexpr bool empty() const noexcept;
+
+  constexpr std::size_t size() const noexcept;
+
+  constexpr std::span<Entry> path() noexcept;
+
+  constexpr std::span<const Entry> path() const noexcept;
+
+  inline Entry& back();
+
+  inline const Entry& back() const;
+
+  inline Entry& operator[](std::size_t index);
+
+  inline const Entry& operator[](std::size_t index) const;
+
+  // Removes all entries from the path.
+  // Bucket capacity remains unaffected.
+  // Time complexity: O(1).
+  constexpr void clear() noexcept;
+
+  inline void reserveDestructive(std::size_t bucket_capacity);
+
+  inline void reserveNondestructive(std::size_t bucket_capacity);
+
+  inline void pushBack(const Entry& entry);
+
+  inline void popBack();
+
+  constexpr std::size_t bucketCapacity() const noexcept;
+
+  constexpr std::size_t maxPathLength() const noexcept;
+
+private:
+  // Compute the maximum length of a path for a tree of the specified capacity.
+  // \param bucket_capacity - the maximum number of buckets the tree can represent.
+  // \return the maximum number of nodes between the root (exclusive) and a leaf (inclusive) for
+  // a tree that can represent up to `bucket_capacity` buckets.
+  // Time complexity: O(1).
+  static constexpr std::size_t computeMaxPathLength(std::size_t bucket_capacity) noexcept;
+
+  // Path from the root of the currently effective tree (exclusive) to some leaf (inclusive).
+  std::unique_ptr<Entry[]> path_;
+  // Length of the current path.
+  std::size_t path_length_ = 0;
+  // The number of buckets represented by the full tree.
+  std::size_t bucket_capacity_ = 0;
+};
+
+CompressedPathStorage::CompressedPathStorage(CompressedPathStorage&& other) noexcept:
+  path_(std::move(other.path_)),
+  path_length_(std::exchange(other.path_length_, 0)),
+  bucket_capacity_(std::exchange(other.bucket_capacity_, 0))
+{}
+
+CompressedPathStorage& CompressedPathStorage::operator=(CompressedPathStorage&& other) noexcept
+{
+  path_ = std::move(other.path_);
+  path_length_ = std::exchange(other.path_length_, 0);
+  bucket_capacity_ = std::exchange(other.bucket_capacity_, 0);
+  return *this;
+}
+
+void CompressedPathStorage::swap(CompressedPathStorage& other) noexcept
+{
+  path_.swap(other.path_);
+  std::swap(path_length_, other.path_length_);
+  std::swap(bucket_capacity_, other.bucket_capacity_);
+}
+
+constexpr bool CompressedPathStorage::empty() const noexcept
+{
+  return path_length_ == 0;
+}
+
+constexpr std::size_t CompressedPathStorage::size() const noexcept
+{
+  return path_length_;
+}
+
+constexpr std::span<CompressedPathStorage::Entry> CompressedPathStorage::path() noexcept
+{
+  return std::span<Entry>{path_.get(), path_length_};
+}
+
+constexpr std::span<const CompressedPathStorage::Entry> CompressedPathStorage::path() const noexcept
+{
+  return std::span<Entry>{path_.get(), path_length_};
+}
+
+CompressedPathStorage::Entry& CompressedPathStorage::back()
+{
+  assert(path_length_ > 0);
+  return path_[path_length_ - 1];
+}
+
+const CompressedPathStorage::Entry& CompressedPathStorage::back() const
+{
+  assert(path_length_ > 0);
+  return path_[path_length_ - 1];
+}
+
+CompressedPathStorage::Entry& CompressedPathStorage::operator[](std::size_t index)
+{
+  assert(index < path_length_);
+  return path_[index];
+}
+
+const CompressedPathStorage::Entry& CompressedPathStorage::operator[](std::size_t index) const
+{
+  assert(index < path_length_);
+  return path_[index];
+}
+
+constexpr void CompressedPathStorage::clear() noexcept
+{
+  path_length_ = 0;
+}
+
+void CompressedPathStorage::reserveDestructive(std::size_t bucket_capacity)
+{
+  const std::size_t max_path_length_old = maxPathLength();
+  const std::size_t max_path_length_new = computeMaxPathLength(bucket_capacity);
+  if (max_path_length_old != max_path_length_new)
+  {
+    path_ = std::make_unique_for_overwrite<Entry[]>(max_path_length_new);
+  }
+  bucket_capacity_ = bucket_capacity;
+  path_length_ = 0;
+}
+
+void CompressedPathStorage::reserveNondestructive(std::size_t bucket_capacity)
+{
+  const std::size_t max_path_length_old = maxPathLength();
+  const std::size_t max_path_length_new = computeMaxPathLength(bucket_capacity);
+  if (max_path_length_old != max_path_length_new)
+  {
+    std::unique_ptr<Entry[]> path_new = std::make_unique_for_overwrite<Entry[]>(max_path_length_new);
+    const std::size_t path_length_new = std::min(path_length_, max_path_length_new);
+    std::copy_n(path_.get(), path_length_new, path_new.get());
+    path_ = std::move(path_new);
+    path_length_ = path_length_new;
+  }
+  bucket_capacity_ = bucket_capacity;
+}
+
+void CompressedPathStorage::pushBack(const Entry& entry)
+{
+  assert(path_length_ < maxPathLength());
+  path_[path_length_] = entry;
+  ++path_length_;
+}
+
+void CompressedPathStorage::popBack()
+{
+  assert(path_length_ > 0);
+  --path_length_;
+}
+
+constexpr std::size_t CompressedPathStorage::bucketCapacity() const noexcept
+{
+  return bucket_capacity_;
+}
+
+constexpr std::size_t CompressedPathStorage::maxPathLength() const noexcept
+{
+  return computeMaxPathLength(bucket_capacity_);
+}
+
+constexpr std::size_t CompressedPathStorage::computeMaxPathLength(std::size_t bucket_capacity) noexcept
+{
+  // Let f(N) be the height of the full tree representing N buckets, i.e.
+  // the maximum length of the path from the root (inclusive) to a leaf (inclusive):
+  // f(0) = 0
+  // f(1) = 1
+  // ...
+  // f(2N) = 1 + f(N)
+  // f(2N+1) = 1 + f(N+1)
+  // I.e. f(N) = 1 + ceil(log2(N)) for N >= 1.
+  // We don't store the root in the path, so the maximum number of nodes in the path
+  // is f(N)-1 = ceil(log2(N)).
+  return bucket_capacity == 0 ? 0 : ceilLog2(bucket_capacity);
+}
+
+// Stores a compressed path to the last bucket in the tree.
+class CompressedPath
+{
+public:
+  using Entry = CompressedPathStorage::Entry;
+
   // Constructs an empty path.
   constexpr explicit CompressedPath() noexcept = default;
 
-  explicit CompressedPath(std::size_t bucket_capacity):
-    bucket_capacity_(bucket_capacity),
-    num_buckets_(0),
-    root_level_(findDeepestNodeForElements(0, bucket_capacity))
-  {
-    path_.reserve(maxPathLength(bucket_capacity));
-  }
+  //explicit CompressedPath(std::size_t bucket_capacity):
+  //  bucket_capacity_(bucket_capacity),
+  //  num_buckets_(0),
+  //  root_level_(findDeepestNodeForElements(0, bucket_capacity))
+  //{
+  //  path_.reserve(maxPathLength(bucket_capacity));
+  //}
 
-  constexpr CompressedPath(const CompressedPath&) = default;
+  inline CompressedPath(CompressedPath&& other) noexcept;
 
-  constexpr CompressedPath(CompressedPath&& other) noexcept;
-
-  constexpr CompressedPath& operator=(const CompressedPath&) = default;
-
-  constexpr CompressedPath& operator=(CompressedPath&& other)
-    noexcept(std::is_nothrow_move_assignable_v<std::vector<Entry>>);
+  inline CompressedPath& operator=(CompressedPath&& other) noexcept;
 
   constexpr ~CompressedPath() = default;
+
+  CompressedPath(const CompressedPath&) = delete;
+  CompressedPath& operator=(const CompressedPath&) = delete;
 
   // Returns the compressed path to the last bucket, i.e. the nodes between the root (exclusive)
   // and the leaf (inclusive).
   // Time complexity: O(1).
   constexpr std::span<const Entry> path() const noexcept {
-    return path_;
+    return storage_.path();
   }
 
   // Constructs a compressed path to the last bucket for a tree of the specified capacity and size.
@@ -171,7 +386,7 @@ public:
   // Time complexity: O(1).
   constexpr bool lastEntryIsLeftSubtree() const noexcept;
 
-  private:
+private:
   // Modifies the path so that it leads to the immediate parent of the node that it currently leads to.
   // Time complexity: O(1).
   inline void switchToImmediateParent() noexcept;
@@ -202,9 +417,10 @@ public:
   // Time complexity: O(1).
   static constexpr std::size_t maxPathLength(std::size_t bucket_capacity) noexcept;
 
-  std::vector<Entry> path_;
+  CompressedPathStorage storage_;
+  //std::vector<Entry> path_;
   // TODO: just store an entry for the root.
-  std::size_t bucket_capacity_ = 0;
+  //std::size_t bucket_capacity_ = 0;
   std::size_t num_buckets_ = 0;
   std::size_t root_level_ = 0;
 };
@@ -244,18 +460,15 @@ constexpr PathEntry findTreeToExtendAfterPushBack(const CompressedPath& path_to_
   return path[path.size() - 2].node;
 }
 
-constexpr CompressedPath::CompressedPath(CompressedPath&& other) noexcept :
-  path_(std::move(other.path_)),
-  bucket_capacity_(std::exchange(other.bucket_capacity_, static_cast<std::size_t>(0))),
+CompressedPath::CompressedPath(CompressedPath&& other) noexcept :
+  storage_(std::move(other.storage_)),
   num_buckets_(std::exchange(other.num_buckets_, static_cast<std::size_t>(0))),
   root_level_(std::exchange(other.root_level_, static_cast<std::size_t>(0)))
 {}
 
-constexpr CompressedPath& CompressedPath::operator=(CompressedPath&& other)
-  noexcept(std::is_nothrow_move_assignable_v<std::vector<Entry>>)
+CompressedPath& CompressedPath::operator=(CompressedPath&& other) noexcept
 {
-  path_ = std::move(other.path_);
-  bucket_capacity_ = std::exchange(other.bucket_capacity_, static_cast<std::size_t>(0));
+  storage_ = std::move(other.storage_);
   num_buckets_ = std::exchange(other.num_buckets_, static_cast<std::size_t>(0));
   root_level_ = std::exchange(other.root_level_, static_cast<std::size_t>(0));
   return *this;
@@ -263,9 +476,7 @@ constexpr CompressedPath& CompressedPath::operator=(CompressedPath&& other)
 
 void CompressedPath::build(std::size_t num_buckets, std::size_t bucket_capacity)
 {
-  path_.clear();
-  path_.reserve(maxPathLength(bucket_capacity));
-  bucket_capacity_ = bucket_capacity;
+  storage_.reserveDestructive(bucket_capacity);
   num_buckets_ = num_buckets;
   root_level_ = findDeepestNodeForElements(num_buckets_, bucket_capacity);
   // Construct a path to the last bucket.
@@ -294,7 +505,7 @@ void CompressedPath::build(std::size_t num_buckets, std::size_t bucket_capacity)
     }
     else
     {
-      path_.push_back(Entry{ .node = tree, .level = node_level });
+      storage_.pushBack(Entry{ .node = tree, .level = node_level });
       is_adding_left_subtree = !is_adding_left_subtree;
       node_level = 1;
     }
@@ -309,13 +520,14 @@ void CompressedPath::build(std::size_t num_buckets, std::size_t bucket_capacity)
     }
   }
   // Add an entry for the last node.
-  path_.push_back(Entry{ .node = tree, .level = node_level });
+  storage_.pushBack(Entry{ .node = tree, .level = node_level });
 }
 
 void CompressedPath::reserve(std::size_t bucket_capacity)
 {
+  const std::size_t bucket_capacity_old = bucketCapacity();
   // Do nothing if the current capacity is greater or equal to the input one.
-  if (bucket_capacity_ >= bucket_capacity)
+  if (bucket_capacity_old >= bucket_capacity)
   {
     return;
   }
@@ -325,16 +537,15 @@ void CompressedPath::reserve(std::size_t bucket_capacity)
   // all the active buckets are in the left subtree, which is the currently effective tree), then the
   // currently effective tree is a subtree of the tree representing 32 buckets, even though no leftmost
   // subtree of that tree has capacity equal to 15.
-  const std::size_t bucket_capacity_current = countElementsInLeftmostSubtree(bucket_capacity_, root_level_);
-  const std::size_t level = findLeftmostSubtreeWithExactCapacity(bucket_capacity_current, bucket_capacity);
+  const std::size_t bucket_capacity_effective = countElementsInLeftmostSubtree(bucket_capacity_old, root_level_);
+  const std::size_t level = findLeftmostSubtreeWithExactCapacity(bucket_capacity_effective, bucket_capacity);
   if (level != static_cast<std::size_t>(-1))
   {
     // Allocate extra memory in case the longest path in the new tree is longer that
     // the longest path in the old tree.
-    path_.reserve(maxPathLength(bucket_capacity));
-    // Update the capacity.
-    bucket_capacity_ = bucket_capacity;
+    storage_.reserveNondestructive(bucket_capacity);
     // Update the root level.
+    // TODO: AFAIU, this is always equal to `level`.
     root_level_ = findDeepestNodeForElements(num_buckets_, bucket_capacity);
     return;
   }
@@ -344,15 +555,14 @@ void CompressedPath::reserve(std::size_t bucket_capacity)
 
 void CompressedPath::clear() noexcept
 {
-  path_.clear();
+  storage_.clear();
   num_buckets_ = 0;
-  root_level_ = findDeepestNodeForElements(0, bucket_capacity_);
+  root_level_ = findDeepestNodeForElements(0, bucketCapacity());
 }
 
 void CompressedPath::swap(CompressedPath& other) noexcept(std::is_nothrow_swappable_v<std::vector<Entry>&>)
 {
-  path_.swap(other.path_);
-  std::swap(bucket_capacity_, other.bucket_capacity_);
+  storage_.swap(other.storage_);
   std::swap(num_buckets_, other.num_buckets_);
   std::swap(root_level_, other.root_level_);
 }
@@ -370,7 +580,7 @@ void CompressedPath::pushBack()
   // OK, we know that there's at least 1 bucket. If there are 2 or more buckets,
   // then the path must not be empty; if there is exactly 1 bucket, then we can treat
   // the *fake* root node as the left subtree of the new root node that will be added after push_back().
-  if (path_.empty() || lastEntryIsLeftSubtree())
+  if (storage_.empty() || lastEntryIsLeftSubtree())
   {
     // The last entry is the leftmost subtree at level K of some node.
     // If K > 1, then we replace it with an entry for the leftmost subtree at level (K-1) of the same node.
@@ -383,7 +593,7 @@ void CompressedPath::pushBack()
   {
     // OK, the last entry is the rightmost subtree of some node.
     // Remove the last entry.
-    path_.pop_back();
+    storage_.popBack();
     // The new last entry must be the leftmost subtree at level M of some other node.
     // That node cannot be the root, because that would mean that M == 0, and we don't store 0-level entries in the path.
     // We want to replace this entry with an entry for the leftmost subtree at level (M-1) if M > 1, or remove it altogether
@@ -394,28 +604,28 @@ void CompressedPath::pushBack()
     // for the right subtree at level L+1.
     switchToImmediateRightChild();
     // If the previously added entry is not a leaf, add an entry for its deepest leftmost subtree.
-    if (!path_.back().node.empty())
+    if (!storage_.back().node.empty())
     {
-      path_.push_back(makeEntryForDeepestLeftmostSubtree(path_.back().node));
+      storage_.pushBack(makeEntryForDeepestLeftmostSubtree(storage_.back().node));
     }
   }
   ++num_buckets_;
   // num_buckets_ >= 2 now, so the path must not be empty.
-  assert(!path_.empty());
+  assert(!storage_.empty());
   // The last node in the path must be a leaf.
-  assert(path_.back().node.empty());
+  assert(storage_.back().node.empty());
 }
 
 void CompressedPath::popBack()
 {
   assert(num_buckets_ != 0);
   // The path can be empty if the tree currently stores exactly 1 bucket.
-  if (!path_.empty())
+  if (!storage_.empty())
   {
     // If the last entry is a leftmost subtree of some node, remove that entry.
     if (lastEntryIsLeftSubtree())
     {
-      path_.pop_back();
+      storage_.popBack();
     }
     // Now the path must end with an entry for the rightmost subtree of some node.
     // It cannot be empty because even the entry for the leftmost subtree that we might've removed
@@ -435,7 +645,7 @@ void CompressedPath::popBack()
 
 constexpr std::size_t CompressedPath::bucketCapacity() const noexcept
 {
-  return bucket_capacity_;
+  return storage_.bucketCapacity();
 }
 
 constexpr std::size_t CompressedPath::rootLevel() const noexcept
@@ -468,13 +678,13 @@ constexpr bool CompressedPath::lastEntryIsLeftSubtree() const noexcept
   // 6. It doesn't really matter what the function returns if the path is empty, but let's return true -
   //    if the path is empty, then there is at most 1 bucket, which is the left child of the root of the
   //    currently effective tree.
-  return path_.size() % 2 == 0;
+  return storage_.size() % 2 == 0;
 }
 
 void CompressedPath::switchToImmediateParent() noexcept
 {
   // Special case: switching to the immediate parent of the root node.
-  if (path_.empty())
+  if (storage_.empty())
   {
     // switchToImmediateParent() must not be called for the root node if the level of the root is 0 -
     // in this case we must extend the main tree, but we cannot know whether the new bucket capacity should
@@ -483,12 +693,12 @@ void CompressedPath::switchToImmediateParent() noexcept
     --root_level_;
     return;
   }
-  Entry& last_entry = path_.back();
+  Entry& last_entry = storage_.back();
   if (last_entry.level > 1)
   {
     // Construct an entry for the immediate parent.
     // Initialize with the previous entry.
-    PathEntry new_entry = (path_.size() >= 2) ? path_[path_.size() - 2].node : getRootEntry();
+    PathEntry new_entry = (storage_.size() >= 2) ? storage_[storage_.size() - 2].node : getRootEntry();
     // Switch to the leftmost (rightmost) subtree at level M-1.
     if (lastEntryIsLeftSubtree())
     {
@@ -504,7 +714,7 @@ void CompressedPath::switchToImmediateParent() noexcept
   else
   {
     // Just remove the entry for the leftmost/rightmost subtree at level M == 1.
-    path_.pop_back();
+    storage_.popBack();
   }
 }
 
@@ -512,12 +722,12 @@ void CompressedPath::switchToImmediateLeftChild() noexcept
 {
   // Special case: switching to the immediate left subtree of the root.
   // In this case instead of adding an entry we just update the root.
-  if (path_.empty())
+  if (storage_.empty())
   {
     ++root_level_;
     return;
   }
-  Entry& last_entry = path_.back();
+  Entry& last_entry = storage_.back();
   // The last entry must not be for a leaf node.
   assert(!last_entry.node.empty());
   if (lastEntryIsLeftSubtree())
@@ -527,24 +737,24 @@ void CompressedPath::switchToImmediateLeftChild() noexcept
   }
   else
   {
-    path_.push_back(Entry{ .node = last_entry.node.leftChild(), .level = 1 });
+    storage_.pushBack(Entry{ .node = last_entry.node.leftChild(), .level = 1 });
   }
 }
 
 void CompressedPath::switchToImmediateRightChild() noexcept
 {
   // Special case: adding an entry for the immediate right subtree of the root.
-  if (path_.empty())
+  if (storage_.empty())
   {
-    path_.push_back(Entry{ .node = getRootEntry().rightChild(), .level = 1 });
+    storage_.pushBack(Entry{ .node = getRootEntry().rightChild(), .level = 1 });
     return;
   }
-  Entry& last_entry = path_.back();
+  Entry& last_entry = storage_.back();
   // The last entry must not be for a leaf node.
   assert(!last_entry.node.empty());
   if (lastEntryIsLeftSubtree())
   {
-    path_.push_back(Entry{ .node = last_entry.node.rightChild(), .level = 1 });
+    storage_.pushBack(Entry{ .node = last_entry.node.rightChild(), .level = 1 });
   }
   else
   {
@@ -555,7 +765,7 @@ void CompressedPath::switchToImmediateRightChild() noexcept
 
 void CompressedPath::switchToDeepestRightmostChild() noexcept
 {
-  if (path_.empty())
+  if (storage_.empty())
   {
     PathEntry entry = getRootEntry();
     if (entry.empty())
@@ -567,10 +777,10 @@ void CompressedPath::switchToDeepestRightmostChild() noexcept
     // I.e. Kmax = floor(log2(N)): this way, N >= 2^Kmax, but also N < 2^(Kmax+1).
     const std::size_t level = floorLog2(entry.numBuckets());
     entry.switchToRightmostChild(level);
-    path_.push_back(Entry{ .node = entry, .level = level });
+    storage_.pushBack(Entry{ .node = entry, .level = level });
     return;
   }
-  Entry& last_entry = path_.back();
+  Entry& last_entry = storage_.back();
   if (last_entry.node.empty())
   {
     return;
@@ -578,7 +788,7 @@ void CompressedPath::switchToDeepestRightmostChild() noexcept
   const std::size_t level = floorLog2(last_entry.node.numBuckets());
   if (lastEntryIsLeftSubtree())
   {
-    path_.push_back(Entry{ .node = last_entry.node.rightmostChild(level), .level = level });
+    storage_.pushBack(Entry{ .node = last_entry.node.rightmostChild(level), .level = level });
   }
   else
   {
@@ -601,7 +811,7 @@ CompressedPath::makeEntryForDeepestLeftmostSubtree(const PathEntry& path_entry) 
 
 constexpr PathEntry CompressedPath::getRootEntry() const noexcept
 {
-  const std::size_t bucket_capacity_current = countElementsInLeftmostSubtree(bucket_capacity_, root_level_);
+  const std::size_t bucket_capacity_current = countElementsInLeftmostSubtree(bucketCapacity(), root_level_);
   return PathEntry(0, bucket_capacity_current);
 }
 
