@@ -171,7 +171,7 @@ public:
   // Time complexity: O(1).
   constexpr bool lastEntryIsLeftSubtree() const noexcept;
 
-  private:
+private:
   // Modifies the path so that it leads to the immediate parent of the node that it currently leads to.
   // Time complexity: O(1).
   inline void switchToImmediateParent() noexcept;
@@ -335,7 +335,8 @@ void CompressedPath::reserve(std::size_t bucket_capacity)
     // Update the capacity.
     bucket_capacity_ = bucket_capacity;
     // Update the root level.
-    root_level_ = findDeepestNodeForElements(num_buckets_, bucket_capacity);
+    assert(level == findDeepestNodeForElements(num_buckets_, bucket_capacity));
+    root_level_ = level;
     return;
   }
   // Otherwise, just rebuild the path.
