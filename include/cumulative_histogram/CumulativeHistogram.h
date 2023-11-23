@@ -4,6 +4,7 @@
 #include <cumulative_histogram/CompressedPath.h>
 #include <cumulative_histogram/FullTreeView.h>
 #include <cumulative_histogram/Math.h>
+#include <cumulative_histogram/TreeUtils.h>
 
 #include <algorithm>
 #include <cassert>
@@ -401,43 +402,6 @@ namespace Detail_NS
     // Add elements from the last bucket.
     const std::span<const T> last_bucket = elements.last(bucket_size);
     return std::accumulate(last_bucket.begin(), last_bucket.end(), std::move(result), sum_op);
-  }
-
-  // Initializes the active nodes of the given tree according to the elements.
-  // A node is active if there are elements in both its left and right subtrees.
-  // \param elements - all elements represented by the main tree.
-  // \param tree - some subtree of the main tree to build.
-  // \param bucket_size - the number of elements per bucket.
-  // \return the sum of all elements represented by `tree`.
-  // Time complexity: O(M), where M is the number of elements from `elements` represented by `tree`
-  //                  (M <= elements.size()).
-  template<class T, class SumOperation>
-  T buildBucketizedTree(std::span<const T> elements, const FullTreeView<T>& tree,
-                        std::size_t bucket_size, SumOperation sum_op)
-  {
-    // Total number of active buckets.
-    const std::size_t num_buckets = countBuckets(elements.size(), bucket_size);
-    FullTreeView<T> t = tree;
-    T total_sum{};
-    while (!t.empty())
-    {
-      // Just switch to the left subtree if the root is inactive.
-      if (num_buckets <= t.pivot())
-      {
-        t.switchToLeftChild();
-        continue;
-      }
-      T total_sum_left = buildBucketizedTree(elements, t.leftChild(), bucket_size, sum_op);
-      addForAdditive(total_sum, total_sum_left, sum_op);
-      t.root() = std::move(total_sum_left);
-      t.switchToRightChild();
-    }
-    // Add elements from the last active bucket represented by the input tree.
-    assert(t.numBuckets() == 1);
-    const std::size_t element_first = t.bucketFirst() * bucket_size;
-    const std::size_t num_elements = std::min(elements.size() - element_first, bucket_size);
-    const std::span<const T> elements_in_bucket = elements.subspan(element_first, num_elements);
-    return std::accumulate(elements_in_bucket.begin(), elements_in_bucket.end(), std::move(total_sum), sum_op);
   }
 
 }  // namespace Detail_NS
