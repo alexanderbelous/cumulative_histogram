@@ -785,34 +785,39 @@ void CumulativeHistogram<T, SumOperation>::increment(size_type k, const T& value
   {
     throw std::out_of_range("CumulativeHistogram::increment(): k is out of range.");
   }
-  const size_type k_plus_one = k + 1;
-  // Full view of the currently effective tree.
-  Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
-  while (!tree.empty())
+  // 0-based index of the last active bucket in the current tree.
+  std::size_t last_active_bucket = path_to_last_bucket_.numBuckets() - 1;
+  // If elements_[k] is in the last active bucket represeted by the tree, then there
+  // is no active node that contains this bucket as a term.
+  if (k < last_active_bucket * bucket_size)
   {
-    // The root of the tree stores the sum of all elements [first; middle).
-    const std::size_t middle = tree.pivot() * bucket_size;
-    if (k_plus_one > middle)
+    const std::size_t bucket_for_k = k / bucket_size;
+    // Full view of the currently effective tree.
+    Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
+    // Loop while bucket_for_k is not the last active bucket represented by the tree.
+    do
     {
-      tree.switchToRightChild();
-    }
-    else
-    {
-      // The root stores the sum of all elements in the left subtree, i.e. [first; middle),
-      // so we should increment it if the root node is active - which is only if the right subtree
-      // is not empty. The elements represented by the right subtree are [middle; size()), i.e.
-      // it's not empty if and only if middle < size().
-      if (middle < size())
+      // The root of the tree stores the sum of all elements from buckets [first; middle).
+      const std::size_t middle = tree.pivot();
+      if (bucket_for_k >= middle)
       {
-        Detail_NS::addForAdditive(tree.root(), value, sum_op_);
+        // If elements_[k] is not in any of those buckets, we switch to the right subtree.
+        tree.switchToRightChild();
       }
-      // Break if k == middle-1: this implies that no other node contains elements_[k] as a term.
-      if (k_plus_one == middle)
+      else
       {
-        break;
+        // Otherwise, elements_[k] is is one of the buckets represented by the left subtree.
+        // The root stores the sum of all elements from the buckets of the left subtree, but only if the
+        // right subtree is not empty (otherwise the root node is inactive). We can check whether the
+        // right subtree is empty by checking if its first bucket (middle) is active.
+        if (middle <= last_active_bucket)
+        {
+          Detail_NS::addForAdditive(tree.root(), value, sum_op_);
+          last_active_bucket = middle - 1;
+        }
+        tree.switchToLeftChild();
       }
-      tree.switchToLeftChild();
-    }
+    } while (bucket_for_k != last_active_bucket);
   }
   // Update the element itself.
   Detail_NS::addForAdditive(elements_[k], value, sum_op_);

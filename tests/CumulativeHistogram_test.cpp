@@ -590,16 +590,34 @@ TEST(CumulativeHistogram, TotalSum) {
 }
 
 TEST(CumulativeHistogram, Increment) {
-  static constexpr std::size_t kNumElements = 5;
-  static constexpr int kNewValues[kNumElements] = {1, 2, 3, 4, 5};
-  CumulativeHistogram<int> histogram(kNumElements);
-  for (std::size_t i = 0; i < kNumElements; ++i) {
-    EXPECT_EQ(histogram.element(i), 0);
-    histogram.increment(i, kNewValues[i]);
-    EXPECT_EQ(histogram.element(i), kNewValues[i]);
-  }
-  for (std::size_t i = 0; i < kNumElements; ++i) {
-    EXPECT_EQ(histogram.element(i), kNewValues[i]);
+  using ElementType = unsigned int;
+  constexpr std::size_t kCapacityMax = 40;
+  constexpr ElementType kInitialValue = 1;
+  constexpr ElementType kIncrementValue = 7;
+  constexpr ElementType kNewValue = kInitialValue + kIncrementValue;
+  for (std::size_t capacity = 0; capacity < kCapacityMax; ++capacity)
+  {
+    for (std::size_t num_elements = 0; num_elements <= capacity; ++num_elements)
+    {
+      CumulativeHistogram<ElementType> histogram(num_elements, kInitialValue);
+      histogram.reserve(capacity);
+      for (std::size_t i = 0; i < num_elements; ++i)
+      {
+        histogram.increment(i, kIncrementValue);
+        // i-th element and all elements before it must be equal to kNewValue.
+        for (std::size_t j = 0; j <= i; ++j)
+        {
+          EXPECT_EQ(histogram.element(j), kNewValue);
+        }
+        // All elements after i must still be equal to kInitialValue.
+        for (std::size_t j = i + 1; j < num_elements; ++j)
+        {
+          EXPECT_EQ(histogram.element(j), kInitialValue);
+        }
+        // Check all prefix sums.
+        EXPECT_TRUE(CheckPrefixSums(histogram));
+      }
+    }
   }
 }
 
