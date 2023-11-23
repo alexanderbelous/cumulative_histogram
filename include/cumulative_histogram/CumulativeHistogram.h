@@ -865,9 +865,9 @@ T CumulativeHistogram<T, SumOperation>::prefixSum(size_type k) const
   const std::size_t num_active_buckets = path_to_last_bucket_.numBuckets();
   // Determine the index of the bucket that contains elements_[k].
   // Optimization - if k is the last element in its bucket, but not the last element of the histogram, then
-  // we can simply compute the prefix sum as the sum of buckets [0; bucket_index_for_k] via sumBuckets().
+  // we can compute the prefixSum(k) as the sum of buckets [0; bucket_index_for_k].
   const std::size_t bucket_index_for_k = std::min((k + 1) / bucket_size, num_active_buckets - 1);
-  // Index of the first element in the bucket that contains elements_[k].
+  // Index of the first element in this bucket.
   const std::size_t first = bucket_index_for_k * bucket_size;
   // Compute the sum of elements from buckets [0; bucket_index_for_k).
   // i.e. the sume of elements [0; bucket_index_for_k * bucket_size).
@@ -877,17 +877,14 @@ T CumulativeHistogram<T, SumOperation>::prefixSum(size_type k) const
     Detail_NS::FullTreeView<const T> tree = getFullTreeView();
     do
     {
-      // The tree represents buckets [first; last).
-      // Its left subtree represents buckets [first; middle), and the right subtree represents [middle; last).
-      // The root of the tree stores the sum of all elements from the buckets of the left subtree.
-      // However, the root is only active if the right subtree is not empty.
-      // The right subtree is empty if all elements are in the left subtree, i.e. if bucket_index_for_k < middle.
+      // If all buckets [0; bucket_index_for_k] are in the left subtree, just switch to the left subtree.
       if (bucket_index_for_k < tree.pivot())
       {
         tree.switchToLeftChild();
       }
       else
       {
+        // Otherwise, the right subtree represents at least 1 bucket, so the root is an acitve node.
         Detail_NS::addForAdditive(result, tree.root(), sum_op_);
         tree.switchToRightChild();
       }
