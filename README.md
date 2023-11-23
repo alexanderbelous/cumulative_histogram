@@ -1,10 +1,10 @@
 # cumulative_histogram
 Fast cumulative histogram (C++)
 
-This library provides a container `CumulativeHistogram` that allows to efficiently compute prefix sums for
-a dynamic array of elements. The 2 naive solutions (storing the elements as a plain array or storing an array
-of partial sums) have very good time complexity for some operations, but perform poorly for the others. This
-class offers a compromise between them.
+This header-only library provides a container `CumulativeHistogram` that allows to efficiently compute prefix
+sums for a dynamic array of elements. The 2 naive solutions (storing the elements as a plain array or storing
+an array of partial sums) have very good time complexity for some operations, but perform poorly for the
+others. This class offers a compromise between them.
 
 Another data structure for this problem, called Fenwick tree, also offers good time complexity for both updating
 individual elements and computing prefix sums, but not for adding/removing elements.
