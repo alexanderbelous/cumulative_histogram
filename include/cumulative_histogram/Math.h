@@ -153,4 +153,83 @@ constexpr std::size_t findLeftmostSubtreeWithExactCapacity(std::size_t capacity_
   return static_cast<std::size_t>(-1);
 }
 
+// Computes the new capacity for a full CumulativeHistogram that currently stores the specified number of
+// elements.
+// \param capacity - the maximum number of elements that the histogram can currently store.
+// \return the smallest capacity M, such that
+//         M >= 2*capacity and the current tree is a subtree of the new tree.
+// Note that the result does not depend on the number of elements per bucket.
+// Time complexity: O(1).
+constexpr std::size_t computeNewCapacityForFullTree(std::size_t capacity) noexcept
+{
+  // Special case: if the tree is currently empty, then the new capacity is simply 2.
+  if (capacity == 0)
+  {
+    return 2;
+  }
+  // Otherwise, there's at least 1 bucket already, so we should increase the number of buckets
+  // from K to either 2K-1 or 2K (note that it can remain 1 if 2*Nmax elements also fit into a single bucket).
+  // What is the smallest M such that
+  //   M >= Nmax*2 AND
+  //   (ceil(M/BucketSize) == 2*ceil(Nmax/BucketSize) OR
+  //    ceil(M/BucketSize) == 2*ceil(Nmax/BucketSize) - 1)
+  // ?
+  // 1) Let's consider the case when Nmax < BucketSize.
+  //   If 2*Nmax <= BucketSize, then the new number of buckets is also 1 = 2*1 - 1, so 2*Nmax is the answer.
+  //   Otherwise, ceil(2*Nmax/BucketSize) = 2, because 2*Nmax < 2*BucketSize, so the new number of buckets
+  //   is 2 = 2*1, and 2*Nmax is the answer.
+  //   I.e. 2*Nmax is the answer in both cases.
+  // 2) Let's consider the case when Nmax >= BucketSize.
+  //   Let Nmax = a * BucketSize + b, where a > 0 and b < BucketSize.
+  //   If b == 0, then 2*Nmax = 2*a*BucketSize is obviously the answer.
+  //   Otherwise, ceil(2*Nmax/BucketSize) = ceil((2*a*BucketSize + 2*b)/BucketSize)
+  //            = 2a + ceil(2*b/BucketSize)
+  //     If 2*b < BucketSize, then the new number of buckets is 2a+1 = 2*(a+1) - 1;
+  //     Otherwise, the new number of buckets is 2a+2 = 2*(a+1)
+  //     Therefore, in both cases 2*Nmax is the answer.
+  return capacity * 2;
+}
+
+// Computes the new capacity for a CumulativeHistogram so that it can store at least the specified number
+// of elements.
+// \param current_capacity - the current capacity of the histogram.
+// \param new_size - the requested number of elements.
+// \return new_size if current_capacity == 0;
+//         otherwise, the result is equivalent to the result of an imaginary function
+//             [](std::size_t current_capacity, std::size_t new_size)
+//             {
+//               while (current_capacity < new_size)
+//                 current_capacity = computeNewCapacityForFullTree(current_capacity);
+//               return current_capacity;
+//             };
+// Time complexity: O(1).
+constexpr std::size_t computeNewCapacityForResize(std::size_t current_capacity, std::size_t new_size) noexcept
+{
+  // Edge case.
+  if (current_capacity == 0)
+  {
+    return new_size;
+  }
+  // If the new number of elements does not exceed the current capacity, then there's no need to update capacity.
+  if (new_size <= current_capacity)
+  {
+    return current_capacity;
+  }
+  // Normally, we double the capacity if the histogram is full - this ensures that the new tree will
+  // contain the current tree as its subtree. Here, however, it's possible that new_size > capacity * 2.
+  // So, instead we need to find the smallest nonnegative K such that
+  //   current_capacity * 2^K >= new_size,
+  // <=>
+  //   2^K >= new_size / current_capacity
+  // <=>
+  //   K >= log2(new_size / current_capacity)
+  // <=>
+  //   K = ceil(log2(new_size / current_capacity))
+  //
+  // Since new_size > current_capacity, we can compute it as
+  //   K = ceil(log2(ceil(new_size / current_capacity)))
+  const std::size_t ceiled_ratio = (new_size / current_capacity) + (new_size % current_capacity != 0);
+  return current_capacity << ceilLog2(ceiled_ratio);
+}
+
 }  // namespace CumulativeHistogram_NS::Detail_NS

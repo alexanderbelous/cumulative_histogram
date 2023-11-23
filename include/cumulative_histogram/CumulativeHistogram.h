@@ -331,41 +331,6 @@ void swap(CumulativeHistogram<T>& lhs, CumulativeHistogram<T>& rhs)
 
 namespace Detail_NS
 {
-  // Computes the new capacity for a full tree that currently stores the specified number of elements.
-  // \param capacity - capacity of the current tree.
-  // \return the smallest capacity M of the new tree, such that
-  //   M >= 2*capacity and the current tree is a subtree of the new tree.
-  // Time complexity: O(1).
-  constexpr std::size_t computeNewCapacityForFullTree(std::size_t capacity) noexcept
-  {
-    // Special case: if the tree is currently empty, then the new capacity is simply 2.
-    if (capacity == 0)
-    {
-      return 2;
-    }
-    // Otherwise, there's at least 1 bucket already, so we should increase the number of buckets
-    // from K to either 2K-1 or 2K (note that it can remain 1 if 2*Nmax elements also fit into a single bucket).
-    // What is the smallest M such that
-    //   M >= Nmax*2 AND
-    //   (ceil(M/BucketSize) == 2*ceil(Nmax/BucketSize) OR
-    //    ceil(M/BucketSize) == 2*ceil(Nmax/BucketSize) - 1)
-    // ?
-    // 1) Let's consider the case when Nmax < BucketSize.
-    //   If 2*Nmax <= BucketSize, then the new number of buckets is also 1 = 2*1 - 1, so 2*Nmax is the answer.
-    //   Otherwise, ceil(2*Nmax/BucketSize) = 2, because 2*Nmax < 2*BucketSize, so the new number of buckets
-    //   is 2 = 2*1, and 2*Nmax is the answer.
-    //   I.e. 2*Nmax is the answer in both cases.
-    // 2) Let's consider the case when Nmax >= BucketSize.
-    //   Let Nmax = a * BucketSize + b, where a > 0 and b < BucketSize.
-    //   If b == 0, then 2*Nmax = 2*a*BucketSize is obviously the answer.
-    //   Otherwise, ceil(2*Nmax/BucketSize) = ceil((2*a*BucketSize + 2*b)/BucketSize)
-    //            = 2a + ceil(2*b/BucketSize)
-    //     If 2*b < BucketSize, then the new number of buckets is 2a+1 = 2*(a+1) - 1;
-    //     Otherwise, the new number of buckets is 2a+2 = 2*(a+1)
-    //     Therefore, in both cases 2*Nmax is the answer.
-    return capacity * 2;
-  }
-
   template<class T, class SumOperation>
   constexpr void addForAdditive(T& lhs, const T& rhs, SumOperation sum_op)
   {
@@ -379,7 +344,6 @@ namespace Detail_NS
       lhs = sum_op(std::move(lhs), rhs);
     }
   }
-
 }  // namespace Detail_NS
 
 template<class T, class SumOperation>
@@ -767,11 +731,11 @@ void CumulativeHistogram<T, SumOperation>::resize(size_type num_elements)
     return;
   }
   // Append N'-N elements if N < N'.
-  // TODO: reserve space for 2x more elements (or 4x or however much is needed),
-  // so that we don't have to rebuild the tree.
-  // Pros: resize will be slighly faster, because the tree can be copied instead of rebuilding.
-  // Cons: memory overhead if extra space will not be used.
-  // reserve(num_elements);
+  if (num_elements > capacity())
+  {
+    // Reserve space for new elements.
+    reserve(Detail_NS::computeNewCapacityForResize(capacity(), num_elements));
+  }
   // TODO: I think a more efficient implementation is possible: basically buildTree(), which only
   // updates new nodes.
   const size_type elements_to_add = num_elements - size();
