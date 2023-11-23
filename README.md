@@ -46,10 +46,10 @@ int main()
     histogram.prefixSum(1);     // returns 9 now
 
     // Append a new element (initalized with 5) to the end:
-    histogram.push_back(5);
+    histogram.pushBack(5);
 
     // Remove the last element:
-    histogram.pop_back();
+    histogram.popPack();
 
     // Find the first index k such that histogram.prefixSum(k) >= 10:
     auto [iter, prefix_sum] = histogram.lowerBound(10);
