@@ -184,16 +184,17 @@ private:
   // Time complexity: O(1).
   inline void switchToImmediateRightChild() noexcept;
 
-  // Modifies the path so that it leads to the deepest rightmost child of the node that it currently leads to.
-  // If the node that the path currently leads to is a leaf, the function has no effect.
-  // Time complexity: O(1).
-  inline void switchToDeepestRightmostChild() noexcept;
-
   // Constructs an entry for the deepest leftmost subtree of the given PathEntry.
   // The behavior is unspecified if path_entry.empty().
   // \return an entry for the deepest leftmost subtree of path_entry.
   // Time complexity: O(1).
   static constexpr Entry makeEntryForDeepestLeftmostSubtree(const PathEntry& path_entry) noexcept;
+
+  // Constructs an entry for the deepest rightmost subtree of the given PathEntry.
+  // The behavior is unspecified if path_entry.empty().
+  // \return an entry for the deepest rightmost subtree of path_entry.
+  // Time complexity: O(1).
+  static constexpr Entry makeEntryForDeepestRightmostSubtree(const PathEntry& path_entry) noexcept;
 
   // Compute the maximum length of a path for a tree of the specified capacity.
   // \param bucket_capacity - the maximum number of buckets the tree can represent.
@@ -429,7 +430,14 @@ void CompressedPath::popBack()
     switchToImmediateLeftChild();
     // Now either the path is empty, or it ends with an entry for the leftmost subtree of some node.
     // If the new last entry is not a leaf, add an entry for its deepest rightmost subtree.
-    switchToDeepestRightmostChild();
+    assert(lastEntryIsLeftSubtree());
+    {
+      const PathEntry last_entry = path_.empty() ? getRootEntry() : path_.back().node;
+      if (!last_entry.empty())
+      {
+        path_.push_back(makeEntryForDeepestRightmostSubtree(last_entry));
+      }
+    }
   }
   --num_buckets_;
 }
@@ -554,40 +562,6 @@ void CompressedPath::switchToImmediateRightChild() noexcept
   }
 }
 
-void CompressedPath::switchToDeepestRightmostChild() noexcept
-{
-  if (path_.empty())
-  {
-    PathEntry entry = getRootEntry();
-    if (entry.empty())
-    {
-      return;
-    }
-    // The rightmost subtree at level K has floor(N / 2^K) buckets, where N is the number of buckets in the
-    // current tree. Therefore, the maximum valid level is such Kmax that floor(N / 2^Kmax) == 1.
-    // I.e. Kmax = floor(log2(N)): this way, N >= 2^Kmax, but also N < 2^(Kmax+1).
-    const std::size_t level = floorLog2(entry.numBuckets());
-    entry.switchToRightmostChild(level);
-    path_.push_back(Entry{ .node = entry, .level = level });
-    return;
-  }
-  Entry& last_entry = path_.back();
-  if (last_entry.node.empty())
-  {
-    return;
-  }
-  const std::size_t level = floorLog2(last_entry.node.numBuckets());
-  if (lastEntryIsLeftSubtree())
-  {
-    path_.push_back(Entry{ .node = last_entry.node.rightmostChild(level), .level = level });
-  }
-  else
-  {
-    last_entry.node.switchToRightmostChild(level);
-    last_entry.level += level;
-  }
-}
-
 constexpr
 CompressedPath::Entry
 CompressedPath::makeEntryForDeepestLeftmostSubtree(const PathEntry& path_entry) noexcept
@@ -598,6 +572,18 @@ CompressedPath::makeEntryForDeepestLeftmostSubtree(const PathEntry& path_entry) 
   // I.e. Kmax = ceil(log2(N)).
   const std::size_t level = ceilLog2(path_entry.numBuckets());
   return Entry{ .node = path_entry.leftmostChild(level), .level = level };
+}
+
+constexpr
+CompressedPath::Entry
+CompressedPath::makeEntryForDeepestRightmostSubtree(const PathEntry& path_entry) noexcept
+{
+  assert(!path_entry.empty());
+  // The rightmost subtree at level K has floor(N / 2^K) buckets, where N is the number of buckets in the
+  // current tree. Therefore, the maximum valid level is such Kmax that floor(N / 2^Kmax) == 1.
+  // I.e. Kmax = floor(log2(N)): this way, N >= 2^Kmax, but also N < 2^(Kmax+1).
+  const std::size_t level = floorLog2(path_entry.numBuckets());
+  return Entry{ .node = path_entry.rightmostChild(level), .level = level };
 }
 
 constexpr PathEntry CompressedPath::getRootEntry() const noexcept
