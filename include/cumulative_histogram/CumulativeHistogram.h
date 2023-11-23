@@ -861,36 +861,40 @@ T CumulativeHistogram<T, SumOperation>::prefixSum(size_type k) const
   {
     throw std::out_of_range("CumulativeHistogram::prefixSum(): k is out of range.");
   }
-  const size_type k_plus_one = k + 1;
-  // Special case for the total sum
-  if (k_plus_one == size())
+  // Total number of active buckets.
+  const std::size_t num_active_buckets = path_to_last_bucket_.numBuckets();
+  // Determine the index of the bucket that contains elements_[k].
+  // Optimization - if k is the last element in its bucket, but not the last element of the histogram, then
+  // we can simply compute the prefix sum as the sum of buckets [0; bucket_index_for_k] via sumBuckets().
+  const std::size_t bucket_index_for_k = std::min((k + 1) / bucket_size, num_active_buckets - 1);
+  // Index of the first element in the bucket that contains elements_[k].
+  const std::size_t first = bucket_index_for_k * bucket_size;
+  // Compute the sum of elements from buckets [0; bucket_index_for_k).
+  // i.e. the sume of elements [0; bucket_index_for_k * bucket_size).
+  T result{};
+  if (bucket_index_for_k != 0)
   {
-    return totalSum();
-  }
-  T result {};
-  // Full view of the currently effective tree.
-  Detail_NS::FullTreeView<const T> tree = getFullTreeView();
-  while (!tree.empty())
-  {
-    // The root of the tree stores the sum of all elements [first; middle).
-    const std::size_t middle = tree.pivot() * bucket_size;
-    if (k_plus_one < middle)
+    Detail_NS::FullTreeView<const T> tree = getFullTreeView();
+    do
     {
-      tree.switchToLeftChild();
-    }
-    else
-    {
-      Detail_NS::addForAdditive(result, tree.root(), sum_op_);
-      if (k_plus_one == middle)
+      // The tree represents buckets [first; last).
+      // Its left subtree represents buckets [first; middle), and the right subtree represents [middle; last).
+      // The root of the tree stores the sum of all elements from the buckets of the left subtree.
+      // However, the root is only active if the right subtree is not empty.
+      // The right subtree is empty if all elements are in the left subtree, i.e. if bucket_index_for_k < middle.
+      if (bucket_index_for_k < tree.pivot())
       {
-        return result;
+        tree.switchToLeftChild();
       }
-      tree.switchToRightChild();
-    }
+      else
+      {
+        Detail_NS::addForAdditive(result, tree.root(), sum_op_);
+        tree.switchToRightChild();
+      }
+    } while (tree.bucketFirst() != bucket_index_for_k);
   }
-  // Add elements from the bucket.
-  const size_type first = tree.bucketFirst() * bucket_size;
-  return std::accumulate(elements_.begin() + first, elements_.begin() + k_plus_one, std::move(result), sum_op_);
+  // Add elements from the last bucket.
+  return std::accumulate(elements_.begin() + first, elements_.begin() + k + 1, std::move(result), sum_op_);
 }
 
 template<class T, class SumOperation>
