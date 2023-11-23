@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <numeric>
+#include <random>
 #include <stdexcept>
 #include <vector>
 
@@ -192,6 +193,45 @@ void BM_CumulativeHisogramLowerBound(benchmark::State& state) {
   }
 }
 BENCHMARK(BM_CumulativeHisogramLowerBound)->Range(8, 256 << 10);
+
+void BM_ArrayOfElementsCombo(benchmark::State& state) {
+  const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
+  std::mt19937 gen;
+  std::uniform_int_distribution<std::size_t> distrib(0, num_elements - 1);
+  ArrayOfElements<ElementTypeForBenchmark> histogram(num_elements);
+  for (auto _ : state) {
+    const std::size_t i = distrib(gen);
+    benchmark::DoNotOptimize(histogram.prefixSum(i));
+    histogram.increment(i, static_cast<ElementTypeForBenchmark>(1));
+  }
+}
+BENCHMARK(BM_ArrayOfElementsCombo)->RangeMultiplier(2)->Range(8, 256 << 10);
+
+void BM_ArrayOfPrefixSumsCombo(benchmark::State& state) {
+  const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
+  std::mt19937 gen;
+  std::uniform_int_distribution<std::size_t> distrib(0, num_elements - 1);
+  ArrayOfPrefixSums<ElementTypeForBenchmark> histogram(num_elements);
+  for (auto _ : state) {
+    const std::size_t i = distrib(gen);
+    benchmark::DoNotOptimize(histogram.prefixSum(i));
+    histogram.increment(i, static_cast<ElementTypeForBenchmark>(1));
+  }
+}
+BENCHMARK(BM_ArrayOfPrefixSumsCombo)->RangeMultiplier(2)->Range(8, 256 << 10);
+
+void BM_CumulativeHisogramCombo(benchmark::State& state) {
+  const std::size_t num_elements = static_cast<std::size_t>(state.range(0));
+  std::mt19937 gen;
+  std::uniform_int_distribution<std::size_t> distrib(0, num_elements - 1);
+  CumulativeHistogram<ElementTypeForBenchmark> histogram(num_elements);
+  for (auto _ : state) {
+    const std::size_t i = distrib(gen);
+    benchmark::DoNotOptimize(histogram.prefixSum(i));
+    histogram.increment(i, static_cast<ElementTypeForBenchmark>(1));
+  }
+}
+BENCHMARK(BM_CumulativeHisogramCombo)->RangeMultiplier(2)->Range(8, 256 << 10);
 
 // Measures the average time of calling pushBack() N times for a CumulativeHistogram
 // currently storing N elements, and capable of storing 2N elements.
