@@ -91,14 +91,47 @@ namespace CumulativeHistogram_NS::Detail_NS
   // \param elements - all elements represented by the main tree.
   // \param tree - some subtree of the main tree to build.
   // \param bucket_size - the number of elements per bucket.
+  // \param sum_op - function object that implements addition for the type T.
   // \return the sum of all elements represented by `tree`.
   // Time complexity: O(M), where M is the number of elements from `elements` represented by `tree`
   //                  (M <= elements.size()).
   template<class T, class SumOperation>
   T buildBucketizedTree(std::span<const T> elements, const FullTreeView<T>& tree,
-    std::size_t bucket_size, SumOperation sum_op)
+                        std::size_t bucket_size, SumOperation sum_op)
   {
     return TreeBuilder<T, SumOperation>(elements, bucket_size, sum_op).build(tree);
   }
 
+  // Computes the total sum of elements of a tree which is at its full capacity.
+  // \param elements - elements to sum.
+  // \param tree - auxiliary tree for `elements`.
+  // \param bucket_size - the number of elements per bucket.
+  // \param sum_op - function object that implements addition for the type T.
+  // The behavior is undefined if
+  //   elements.empty() || elements.size() != tree.numBuckets() * bucket_size
+  // \returns the total sum of elements from `elements`.
+  // Time complexity: O(log(N/bucket_size) + bucket_size), where N = elements.size().
+  template<class T, class SumOperation>
+  constexpr T sumElementsOfFullTree(std::span<const T> elements, FullTreeView<const T> tree,
+                                    std::size_t bucket_size, SumOperation sum_op)
+  {
+    assert(!elements.empty());
+    assert(elements.size() == tree.numBuckets() * bucket_size);
+    T result{};
+    while (!tree.empty())
+    {
+      if constexpr (std::is_arithmetic_v<T> && std::is_same_v<SumOperation, std::plus<>>)
+      {
+        result += tree.root();
+      }
+      else
+      {
+        result = sum_op(std::move(result), tree.root());
+      }
+      tree.switchToRightChild();
+    }
+    // Add elements from the last bucket.
+    const std::span<const T> last_bucket = elements.last(bucket_size);
+    return std::accumulate(last_bucket.begin(), last_bucket.end(), std::move(result), sum_op);
+  }
 }

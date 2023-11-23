@@ -380,30 +380,6 @@ namespace Detail_NS
     }
   }
 
-  // Computes the total sum of elements of a tree which is at its full capacity.
-  // \param elements - elements to sum.
-  // \param tree - auxiliary tree for `elements`.
-  // The behavior is undefined if
-  //   elements.empty() || elements.size() != tree.numBuckets() * bucket_size
-  // \returns the total sum of elements from `elements`.
-  // Time complexity: O(logN), where N = elements.size().
-  template<class T, class SumOperation>
-  constexpr T sumElementsOfFullTree(std::span<const T> elements, FullTreeView<const T> tree,
-                                    std::size_t bucket_size, SumOperation sum_op)
-  {
-    assert(!elements.empty());
-    assert(elements.size() == tree.numBuckets() * bucket_size);
-    T result{};
-    while (!tree.empty())
-    {
-      addForAdditive(result, tree.root(), sum_op);
-      tree.switchToRightChild();
-    }
-    // Add elements from the last bucket.
-    const std::span<const T> last_bucket = elements.last(bucket_size);
-    return std::accumulate(last_bucket.begin(), last_bucket.end(), std::move(result), sum_op);
-  }
-
 }  // namespace Detail_NS
 
 template<class T, class SumOperation>
