@@ -251,8 +251,7 @@ TEST(CumulativeHistogram, Clear) {
   EXPECT_EQ(histogram.size(), 0);
   // Push back 5 new elements {0, 1, 2, 3, 4}.
   for (std::size_t i = 0; i < kNumElements; ++i) {
-    histogram.pushBack();
-    histogram.increment(i, static_cast<unsigned int>(i));
+    histogram.pushBack(static_cast<unsigned int>(i));
     EXPECT_EQ(histogram.capacity(), kNumElements);
     EXPECT_EQ(histogram.size(), i + 1);
     EXPECT_EQ(histogram.element(i), i);
@@ -354,7 +353,7 @@ TEST(CumulativeHistogram, Reserve) {
 
 TEST(CumulativeHistogram, PushBackZeroInitialized) {
   CumulativeHistogram<unsigned int> histogram;
-  histogram.pushBack();
+  histogram.pushBack(0);
   EXPECT_EQ(histogram.size(), 1);
   EXPECT_EQ(histogram.element(0), 0);
   EXPECT_EQ(histogram.totalSum(), 0);
@@ -363,7 +362,7 @@ TEST(CumulativeHistogram, PushBackZeroInitialized) {
   EXPECT_EQ(histogram.element(0), 42);
   EXPECT_EQ(histogram.totalSum(), 42);
   EXPECT_TRUE(CheckPrefixSums(histogram));
-  histogram.pushBack();
+  histogram.pushBack(0);
   EXPECT_EQ(histogram.size(), 2);
   EXPECT_EQ(histogram.element(0), 42);
   EXPECT_EQ(histogram.element(1), 0);
@@ -374,7 +373,7 @@ TEST(CumulativeHistogram, PushBackZeroInitialized) {
   EXPECT_EQ(histogram.element(1), 5);
   EXPECT_EQ(histogram.totalSum(), 47);
   EXPECT_TRUE(CheckPrefixSums(histogram));
-  histogram.pushBack();
+  histogram.pushBack(0);
   EXPECT_EQ(histogram.size(), 3);
   EXPECT_EQ(histogram.element(0), 42);
   EXPECT_EQ(histogram.element(1), 5);

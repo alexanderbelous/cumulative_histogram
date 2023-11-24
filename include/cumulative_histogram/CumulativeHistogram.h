@@ -193,11 +193,8 @@ public:
   // Time complexity: O(N).
   void clear() noexcept;
 
-  // Add a zero-initialized element to the end.
-  // Time complexity: amortized O(1).
-  void pushBack();
-
   // Add an element to the end.
+  // \param value - value to append.
   // Time complexity: amortized O(1).
   void pushBack(const T& value);
 
@@ -649,12 +646,6 @@ void CumulativeHistogram<T, SumOperation>::fill(const T& value)
   {
     Detail_NS::buildBucketizedTree<T>(elements_, tree, bucket_size, sum_op_);
   }
-}
-
-template<class T, class SumOperation>
-void CumulativeHistogram<T, SumOperation>::pushBack()
-{
-  pushBack(T{});
 }
 
 template<class T, class SumOperation>
