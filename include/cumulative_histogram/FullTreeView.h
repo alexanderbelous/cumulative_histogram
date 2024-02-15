@@ -49,7 +49,7 @@ namespace CumulativeHistogram_NS::Detail_NS
 // +-------+-------+-------+-------+-------+-------+-------+
 // | sB(0) | sB(1) | sB(2) | sB(3) | sB(4) | sB(5) | sB(6) |
 // +-------+-------+-------+-------+-------+-------+-------+
-// | 0     | n2    | n1    | n1+n2 | n0    | n0+n5 | n0+n4 |
+// | 0     | n2    | n1    | n1+n3 | n0    | n0+n5 | n0+n4 |
 // +-------+-------+-------+-------+-------+-------+-------+
 // With this, we can compute any prefix sum s(i), 0 <= i < N as:
 //     // Index of the bucket that element i belongs to.
