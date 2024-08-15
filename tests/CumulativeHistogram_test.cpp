@@ -351,6 +351,71 @@ TEST(CumulativeHistogram, Reserve) {
   EXPECT_TRUE(CheckPrefixSums(histogram));
 }
 
+TEST(CumulativeHistogram, AssignToEmpty)
+{
+  CumulativeHistogram<unsigned int> histogram;
+  histogram.assign(std::vector<unsigned int>{1, 2, 3, 4, 5});
+  EXPECT_EQ(histogram.size(), 5);
+  EXPECT_EQ(histogram.capacity(), 5);
+  EXPECT_EQ(histogram.element(0), 1);
+  EXPECT_EQ(histogram.element(1), 2);
+  EXPECT_EQ(histogram.element(2), 3);
+  EXPECT_EQ(histogram.element(3), 4);
+  EXPECT_EQ(histogram.element(4), 5);
+  EXPECT_TRUE(CheckPrefixSums(histogram));
+}
+
+TEST(CumulativeHistogram, AssignToNonEmptyWithinCapacity)
+{
+  constexpr std::size_t kSizeInitial = 10;
+  constexpr std::size_t kCapacityInitial = kSizeInitial;
+  constexpr unsigned int kValueInitial = 42;
+  constexpr std::size_t kSizeNew = 9;
+  constexpr std::size_t kElementsCapacityNew = 12;
+  constexpr unsigned int kValueNew = 69;
+  static_assert(kCapacityInitial >= kSizeNew,
+                "The initial capacity of the histogram must be greater or equal to the new number of "
+                "elements for this test.");
+  static_assert(kElementsCapacityNew >= kCapacityInitial,
+                "The capacity of the vector storing the new elements must be greater or equal to the "
+                "initial capacity of the histogram for this test.");
+
+  CumulativeHistogram<unsigned int> histogram(kSizeInitial, kValueInitial);
+  std::vector<unsigned int> elements_new(kSizeNew, kValueNew);
+  elements_new.reserve(kElementsCapacityNew);
+  histogram.assign(std::move(elements_new));
+  EXPECT_EQ(histogram.size(), kSizeNew);
+  EXPECT_EQ(histogram.capacity(), kCapacityInitial);
+  for (std::size_t i = 0; i < kSizeNew; ++i)
+  {
+    EXPECT_EQ(histogram.element(i), kValueNew);
+  }
+  EXPECT_TRUE(CheckPrefixSums(histogram));
+}
+
+TEST(CumulativeHistogram, AssignToNonEmptyOutsideCapacity)
+{
+  constexpr std::size_t kSizeInitial = 10;
+  constexpr std::size_t kCapacityInitial = kSizeInitial;
+  constexpr unsigned int kValueInitial = 42;
+  constexpr std::size_t kSizeNew = 20;
+  constexpr unsigned int kValueNew = 69;
+  static_assert(kCapacityInitial < kSizeNew,
+    "The initial capacity of the histogram must be less than the new number of "
+    "elements for this test.");
+
+  CumulativeHistogram<unsigned int> histogram(kSizeInitial, kValueInitial);
+  std::vector<unsigned int> elements_new(kSizeNew, kValueNew);
+  histogram.assign(std::move(elements_new));
+  EXPECT_EQ(histogram.size(), kSizeNew);
+  EXPECT_EQ(histogram.capacity(), kSizeNew);
+  for (std::size_t i = 0; i < kSizeNew; ++i)
+  {
+    EXPECT_EQ(histogram.element(i), kValueNew);
+  }
+  EXPECT_TRUE(CheckPrefixSums(histogram));
+}
+
 TEST(CumulativeHistogram, PushBackZeroInitialized) {
   CumulativeHistogram<unsigned int> histogram;
   histogram.pushBack(0);

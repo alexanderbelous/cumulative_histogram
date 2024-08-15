@@ -193,6 +193,15 @@ public:
   // Time complexity: O(N).
   void clear() noexcept;
 
+  // Replaces the stores elements with the given ones.
+  // The capacity might get reduced after this call:
+  //   * If elements.size() <= this->capacity() <= elements.capacity(), then the capacity remains unaffected.
+  //   * Otherwise, the new capacity will be equal to elements.size().
+  // \param elements - new elements.
+  // Time complexity: O(N + N'), where N is the current number of elements and
+  // N' is the new number of elements.
+  void assign(std::vector<T>&& elements);
+
   // Add an element to the end.
   // \param value - value to append.
   // Time complexity: amortized O(1).
@@ -644,6 +653,30 @@ void CumulativeHistogram<T, SumOperation>::fill(const T& value)
   // However, the time complexity will still be O(N), so whatever.
   if (!tree.empty())
   {
+    Detail_NS::buildBucketizedTree<T>(elements_, tree, bucket_size, sum_op_);
+  }
+}
+
+template<class T, class SumOperation>
+void CumulativeHistogram<T, SumOperation>::assign(std::vector<T>&& elements)
+{
+  if (capacity() < elements.size() || capacity() > elements.capacity())
+  {
+    *this = CumulativeHistogram<T, SumOperation>(std::move(elements), sum_op_);
+    return;
+  }
+  elements_ = std::move(elements);
+  // We know that capacity() >= elements.size(), therefore
+  // countBuckets(capacity(), bucket_size) >= countBuckets(elements.size(), bucket_size).
+  const size_type bucket_capacity = path_to_last_bucket_.bucketCapacity();
+  const size_type num_buckets = Detail_NS::countBuckets(elements_.size(), bucket_size);
+  // Construct a path to the last bucket.
+  path_to_last_bucket_.build(num_buckets, bucket_capacity);
+  // Update the nodes of the tree.
+  const size_type num_nodes = Detail_NS::countNodesInBucketizedTree(num_buckets);
+  if (num_nodes != 0)
+  {
+    const Detail_NS::FullTreeView<T> tree = getMutableFullTreeView();
     Detail_NS::buildBucketizedTree<T>(elements_, tree, bucket_size, sum_op_);
   }
 }
